@@ -209,6 +209,7 @@ function InputWithIcon({ icon, value, onChange, onSubmit, onCancel, placeholder,
     );
 }
 
+// Update ConfirmDialog to be centered on screen
 function ConfirmDialog({ isOpen, title, message, onConfirm, onCancel }) {
     const dialogRef = useRef(null);
 
@@ -231,7 +232,7 @@ function ConfirmDialog({ isOpen, title, message, onConfirm, onCancel }) {
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
             <div 
                 ref={dialogRef}
-                className="bg-background border border-border rounded-md p-6 max-w-md w-full"
+                className="bg-background border border-border rounded-md p-6 max-w-md w-full mx-auto"
             >
                 <h3 className="text-lg font-semibold mb-2">{title}</h3>
                 <p className="text-muted-foreground mb-6">{message}</p>
@@ -244,7 +245,7 @@ function ConfirmDialog({ isOpen, title, message, onConfirm, onCancel }) {
                     </button>
                     <button
                         onClick={onConfirm}
-                        className="px-4 py-2 text-sm bg-muted text-destructive-foreground rounded-md hover:bg-destructive/90 transition-colors"
+                        className="px-4 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
                     >
                         Delete
                     </button>
@@ -835,7 +836,7 @@ function AccountSection({ user, onLogout }) {
 // Updated Skeleton - removed hardcoded dark background
 function SidebarSkeleton() {
     return (
-        <aside className="h-screen w-72 border-r border-border flex flex-col text-foreground bg-background">
+        <aside className="h-screen w-72 border-r border-border flex flex-col text-foreground bg-[#0a0a0a] dark:bg-[#0a0a0a] light:bg-[#f5f5f5]">
             {/* Header Skeleton */}
             <div className="flex items-center gap-3 p-4 border-b border-border">
                 <Skeleton className="w-8 h-8 rounded-full" />
@@ -966,6 +967,25 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
     const [expandedPaths, setExpandedPaths] = useState([]);
     const [currentPath, setCurrentPath] = useState('/');
     const [loading, setLoading] = useState(true);
+    const [confirmDelete, setConfirmDelete] = useState(null);
+
+    // Load expanded paths from localStorage on component mount
+    useEffect(() => {
+        const savedExpandedPaths = localStorage.getItem('sidebar-expanded-paths');
+        if (savedExpandedPaths) {
+            try {
+                const parsed = JSON.parse(savedExpandedPaths);
+                setExpandedPaths(parsed);
+            } catch (error) {
+                console.error('Error parsing saved expanded paths:', error);
+            }
+        }
+    }, []);
+
+    // Save expanded paths to localStorage whenever they change
+    useEffect(() => {
+        localStorage.setItem('sidebar-expanded-paths', JSON.stringify(expandedPaths));
+    }, [expandedPaths]);
 
     useEffect(() => {
         const fetchUser = async () => {
@@ -984,16 +1004,12 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
             setLoading(true);
         }
         
-        // Preserve expanded paths during reload (except for initial load)
-        const previousExpandedPaths = isInitialLoad ? [] : expandedPaths;
-        
+        // Don't preserve expanded paths during initial load - use localStorage instead
         const treeData = await loadFileTree(userId);
         setTree(treeData);
         
-        // Restore expanded paths after tree reload
-        if (!isInitialLoad && previousExpandedPaths.length > 0) {
-            setExpandedPaths(previousExpandedPaths);
-        }
+        // For non-initial loads, preserve the current expanded state
+        // (localStorage handling is done in the useEffect above)
         
         if (isInitialLoad) {
             setLoading(false);
@@ -1018,9 +1034,13 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
             if (forceExpand && prev.includes(path)) {
                 return prev; // Already expanded
             }
-            return prev.includes(path) && !forceExpand
+            const newPaths = prev.includes(path) && !forceExpand
                 ? prev.filter(p => p !== path)
                 : [...prev, path];
+            
+            // Save to localStorage immediately
+            localStorage.setItem('sidebar-expanded-paths', JSON.stringify(newPaths));
+            return newPaths;
         });
     };
 
@@ -1127,7 +1147,7 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
         return update(tree);
     };
 
-    // Updated addFile function with proper path handling
+    // Updated addFile function to preserve expanded state
     const addFile = async (parent, fileName = null) => {
         if (!user) return;
 
@@ -1142,14 +1162,18 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
 
         const newFile = await saveFileItem(user.id, name, 'file', parentId);
         if (newFile) {
-            // Reload tree but preserve expanded state
-            await loadUserFileTree(user.id, false); // false = not initial load
+            // Reload tree (expanded paths will be preserved via localStorage)
+            await loadUserFileTree(user.id, false);
             
             // Auto-expand parent if needed
             if (parent) {
                 const parentPath = getItemPath(parent, tree);
                 if (parentPath && !expandedPaths.includes(parentPath)) {
-                    setExpandedPaths(prev => [...prev, parentPath]);
+                    setExpandedPaths(prev => {
+                        const newPaths = [...prev, parentPath];
+                        localStorage.setItem('sidebar-expanded-paths', JSON.stringify(newPaths));
+                        return newPaths;
+                    });
                 }
             }
             
@@ -1158,7 +1182,7 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
         }
     };
 
-    // Updated addFolder function with proper path handling
+    // Updated addFolder function to preserve expanded state
     const addFolder = async (parent, folderName = null) => {
         if (!user) return;
 
@@ -1173,14 +1197,18 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
 
         const newFolder = await saveFileItem(user.id, name, 'folder', parentId);
         if (newFolder) {
-            // Reload tree but preserve expanded state
-            await loadUserFileTree(user.id, false); // false = not initial load
+            // Reload tree (expanded paths will be preserved via localStorage)
+            await loadUserFileTree(user.id, false);
             
             // Auto-expand parent if needed
             if (parent) {
                 const parentPath = getItemPath(parent, tree);
                 if (parentPath && !expandedPaths.includes(parentPath)) {
-                    setExpandedPaths(prev => [...prev, parentPath]);
+                    setExpandedPaths(prev => {
+                        const newPaths = [...prev, parentPath];
+                        localStorage.setItem('sidebar-expanded-paths', JSON.stringify(newPaths));
+                        return newPaths;
+                    });
                 }
             }
             
@@ -1221,7 +1249,7 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
         );
     }
 
-    // Updated renameItem function to preserve expanded state
+    // Updated renameItem function to update localStorage paths
     const renameItem = async (item, newName) => {
         if (!user || !item.id) return;
 
@@ -1236,40 +1264,45 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
             return;
         }
 
-        // Store current expanded paths before rename
-        const currentExpandedPaths = [...expandedPaths];
-        
         const success = await updateFileItem(item.id, { name: newName });
         if (success) {
-            // Reload tree but preserve expanded state
-            await loadUserFileTree(user.id, false); // false = not initial load
-            
-            // Update any expanded paths that reference the renamed item
+            // Update expanded paths if this is a renamed folder
             if (item.children) {
                 const oldPath = getItemPath(item, tree);
                 if (oldPath) {
-                    const updatedPaths = currentExpandedPaths.map(path => {
-                        if (path.includes(oldPath)) {
-                            // Replace the old name with new name in the path
-                            const pathSegments = path.split('/');
-                            const itemNameIndex = pathSegments.findIndex(segment => segment === item.name);
-                            if (itemNameIndex !== -1) {
-                                pathSegments[itemNameIndex] = newName;
-                                return pathSegments.join('/');
+                    setExpandedPaths(prev => {
+                        const updatedPaths = prev.map(path => {
+                            if (path === oldPath) {
+                                // Direct path to the renamed item
+                                const pathParts = path.split('/');
+                                pathParts[pathParts.length - 1] = newName;
+                                return pathParts.join('/');
+                            } else if (path.startsWith(oldPath + '/')) {
+                                // Child paths of the renamed item
+                                const pathParts = path.split('/');
+                                const oldNameIndex = oldPath.split('/').length - 1;
+                                pathParts[oldNameIndex] = newName;
+                                return pathParts.join('/');
                             }
-                        }
-                        return path;
+                            return path;
+                        });
+                        
+                        // Save updated paths to localStorage
+                        localStorage.setItem('sidebar-expanded-paths', JSON.stringify(updatedPaths));
+                        return updatedPaths;
                     });
-                    setExpandedPaths(updatedPaths);
                 }
             }
+            
+            // Reload tree
+            await loadUserFileTree(user.id, false);
             
         } else {
             toast.error('Failed to rename. Please try again.');
         }
     };
 
-    // Updated deleteItem function to preserve expanded state
+    // Updated deleteItem function to clean up localStorage paths
     const deleteItem = async (item) => {
         if (!user || !item.id) return;
 
@@ -1287,13 +1320,16 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
             // Clean up expanded paths for deleted items
             const itemPath = getItemPath(item, tree);
             if (itemPath) {
-                setExpandedPaths(prev => 
-                    prev.filter(path => !path.startsWith(itemPath))
-                );
+                setExpandedPaths(prev => {
+                    const filteredPaths = prev.filter(path => !path.startsWith(itemPath));
+                    // Save updated paths to localStorage
+                    localStorage.setItem('sidebar-expanded-paths', JSON.stringify(filteredPaths));
+                    return filteredPaths;
+                });
             }
             
-            // Reload tree but preserve remaining expanded state
-            await loadUserFileTree(user.id, false); // false = not initial load
+            // Reload tree
+            await loadUserFileTree(user.id, false);
             
             // Clear selection if deleted item was selected
             if (selectedFile?.id === item.id) {
@@ -1330,136 +1366,148 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
     }
 
     return (
-        <aside className="h-screen w-72 border-r border-border flex flex-col text-foreground bg-background">
-            <div className="flex items-center gap-3 p-4 border-b border-border">
-                <div className="w-8 h-8 rounded-full bg-muted text-sm flex items-center justify-center font-medium uppercase">
-                    {initials}
+        <>
+            <aside className="h-screen w-72 border-r border-border flex flex-col text-foreground bg-[#0a0a0a] dark:bg-[#0a0a0a] light:bg-[#f5f5f5]">
+                <div className="flex items-center gap-3 p-4 border-b border-border">
+                    <div className="w-8 h-8 rounded-full bg-muted text-sm flex items-center justify-center font-medium uppercase">
+                        {initials}
+                    </div>
+                    <div className="flex flex-col">
+                        <Link href="/account" className="text-sm font-medium hover:opacity-80">
+                            {fullName}
+                        </Link>
+                        <span className="text-xs text-muted-foreground">
+                            {currentDate}
+                        </span>
+                    </div>
                 </div>
-                <div className="flex flex-col">
-                    <Link href="/account" className="text-sm font-medium hover:opacity-80">
-                        {fullName}
-                    </Link>
-                    <span className="text-xs text-muted-foreground">
-                        {currentDate}
-                    </span>
+
+                <div className="flex items-center justify-between p-2 border-b border-border">
+                    <span className="text-xs text-muted-foreground uppercase">Explorer</span>
+                    <div className="flex gap-3">
+                        <button 
+                            onClick={() => setPendingAdd({ 
+                                parent: getCurrentParentFolder(), 
+                                type: 'file', 
+                                input: '' 
+                            })}
+                            className="hover:bg-muted p-1 rounded"
+                            title="Add File"
+                        >
+                            <FilePlus className="w-4 h-4 text-muted-foreground" />
+                        </button>
+                        <button 
+                            onClick={() => setPendingAdd({ 
+                                parent: getCurrentParentFolder(), 
+                                type: 'folder', 
+                                input: '' 
+                            })}
+                            className="hover:bg-muted p-1 rounded"
+                            title="Add Folder"
+                        >
+                            <FolderPlus className="w-4 h-4 text-muted-foreground" />
+                        </button>
+                    </div>
                 </div>
-            </div>
 
-            <div className="flex items-center justify-between p-2 border-b border-border">
-                <span className="text-xs text-muted-foreground uppercase">Explorer</span>
-                <div className="flex gap-3">
-                    <button 
-                        onClick={() => setPendingAdd({ 
-                            parent: getCurrentParentFolder(), 
-                            type: 'file', 
-                            input: '' 
-                        })}
-                        className="hover:bg-muted p-1 rounded"
-                        title="Add File"
-                    >
-                        <FilePlus className="w-4 h-4 text-muted-foreground" />
-                    </button>
-                    <button 
-                        onClick={() => setPendingAdd({ 
-                            parent: getCurrentParentFolder(), 
-                            type: 'folder', 
-                            input: '' 
-                        })}
-                        className="hover:bg-muted p-1 rounded"
-                        title="Add Folder"
-                    >
-                        <FolderPlus className="w-4 h-4 text-muted-foreground" />
-                    </button>
-                </div>
-            </div>
+                <Breadcrumbs 
+                    path={currentPath} 
+                    onNavigate={navigateToPath} 
+                    selectedFile={selectedFile}
+                />
 
-            <Breadcrumbs 
-                path={currentPath} 
-                onNavigate={navigateToPath} 
-                selectedFile={selectedFile}
-            />
-
-            <div
-                className="flex-1 overflow-y-auto p-2 text-sm space-y-1"
-                onClick={(e) => {
-                    if (e.target === e.currentTarget) {
-                        handleSelection(null, null);
-                    }
-                }}
-            >
-                {/* Show root-level input at the top if adding to root */}
-                {pendingAdd && pendingAdd.parent === null && (
-                    <InputWithIcon
-                        icon={
-                            pendingAdd.type === 'folder' ? (
-                                <Folder className="w-4 h-4 text-muted-foreground" />
-                            ) : (
-                                <File className="w-4 h-4 text-muted-foreground" />
-                            )
+                <div
+                    className="flex-1 overflow-y-auto p-2 text-sm space-y-1"
+                    onClick={(e) => {
+                        if (e.target === e.currentTarget) {
+                            handleSelection(null, null);
                         }
-                        value={pendingAdd.input}
-                        onChange={(e) => setPendingAdd({ ...pendingAdd, input: e.target.value })}
-                        onSubmit={() => {
-                            if (!pendingAdd.input.trim()) return;
-                            if (pendingAdd.type === 'folder') addFolder(null, pendingAdd.input.trim());
-                            else addFile(null, pendingAdd.input.trim());
-                            setPendingAdd(null);
-                        }}
-                        onCancel={() => setPendingAdd(null)}
-                        placeholder={pendingAdd.type === 'folder' ? 'New folder name' : 'New note'}
+                    }}
+                >
+                    {/* Show root-level input at the top if adding to root */}
+                    {pendingAdd && pendingAdd.parent === null && (
+                        <InputWithIcon
+                            icon={
+                                pendingAdd.type === 'folder' ? (
+                                    <Folder className="w-4 h-4 text-muted-foreground" />
+                                ) : (
+                                    <File className="w-4 h-4 text-muted-foreground" />
+                                )
+                            }
+                            value={pendingAdd.input}
+                            onChange={(e) => setPendingAdd({ ...pendingAdd, input: e.target.value })}
+                            onSubmit={() => {
+                                if (!pendingAdd.input.trim()) return;
+                                if (pendingAdd.type === 'folder') addFolder(null, pendingAdd.input.trim());
+                                else addFile(null, pendingAdd.input.trim());
+                                setPendingAdd(null);
+                            }}
+                            onCancel={() => setPendingAdd(null)}
+                            placeholder={pendingAdd.type === 'folder' ? 'New folder name' : 'New note'}
+                        />
+                    )}
+
+                    {/* Then show the tree items */}
+                    {tree.map((item, i) => (
+                        <TreeItem
+                            key={item.id || i}
+                            item={item}
+                            onAddFile={addFile}
+                            onAddFolder={addFolder}
+                            onFileSelect={handleFileSelection}
+                            onSelect={handleSelection}
+                            selectedFolder={selectedFolder}
+                            selectedFile={selectedFile}
+                            pendingAdd={pendingAdd}
+                            setPendingAdd={setPendingAdd}
+                            setContextMenu={setContextMenu}
+                            expandedPaths={expandedPaths}
+                            toggleExpanded={toggleExpanded}
+                            path=""
+                            fullTree={tree}
+                            renameItem={renameItem}
+                            deleteItem={deleteItem}
+                            contextMenuOpenFor={contextMenu?.item}
+                            setConfirmDelete={setConfirmDelete}
+                        />
+                    ))}
+                </div>
+
+                <AccountSection user={user} onLogout={handleLogout} />
+
+                <Link
+                    href="/settings"
+                    className="hover:opacity-80 border-t border-border px-4 py-3 text-sm flex justify-between items-center"
+                >
+                    Settings
+                    <Settings className="w-4 h-4 text-muted-foreground" />
+                </Link>
+
+                {contextMenu && (
+                    <ContextMenu
+                        x={contextMenu.x}
+                        y={contextMenu.y}
+                        item={contextMenu.item}
+                        onRename={contextMenu.onRename}
+                        onDelete={contextMenu.onDelete}
+                        onAddFile={contextMenu.onAddFile}
+                        onAddFolder={contextMenu.onAddFolder}
+                        onClose={() => setContextMenu(null)}
                     />
                 )}
+            </aside>
 
-                {/* Then show the tree items */}
-                {tree.map((item, i) => (
-                    <TreeItem
-                        key={item.id || i}
-                        item={item}
-                        onAddFile={addFile}
-                        onAddFolder={addFolder}
-                        onFileSelect={handleFileSelection}
-                        onSelect={handleSelection}
-                        selectedFolder={selectedFolder}
-                        selectedFile={selectedFile}
-                        pendingAdd={pendingAdd}
-                        setPendingAdd={setPendingAdd}
-                        setContextMenu={setContextMenu}
-                        expandedPaths={expandedPaths}
-                        toggleExpanded={toggleExpanded}
-                        path=""
-                        fullTree={tree}
-                        renameItem={renameItem}
-                        deleteItem={deleteItem}
-                        contextMenuOpenFor={contextMenu?.item}
-                    />
-                ))}
-            </div>
-
-            {/* Updated Account Section */}
-            <AccountSection user={user} onLogout={handleLogout} />
-
-            {/* Settings Link */}
-            <Link
-                href="/settings"
-                className="hover:opacity-80 border-t border-border px-4 py-3 text-sm flex justify-between items-center"
-            >
-                Settings
-                <Settings className="w-4 h-4 text-muted-foreground" />
-            </Link>
-
-            {contextMenu && (
-                <ContextMenu
-                    x={contextMenu.x}
-                    y={contextMenu.y}
-                    item={contextMenu.item}
-                    onRename={contextMenu.onRename}
-                    onDelete={contextMenu.onDelete}
-                    onAddFile={contextMenu.onAddFile}
-                    onAddFolder={contextMenu.onAddFolder}
-                    onClose={() => setContextMenu(null)}
+            {/* Render ConfirmDialog outside of sidebar hierarchy */}
+            {confirmDelete && (
+                <ConfirmDialog
+                    isOpen={true}
+                    title={confirmDelete.title}
+                    message={confirmDelete.message}
+                    onConfirm={confirmDelete.onConfirm}
+                    onCancel={confirmDelete.onCancel}
                 />
             )}
-        </aside>
+        </>
     );
 }
 
