@@ -317,12 +317,14 @@ function TreeItem({
     const [renameValue, setRenameValue] = useState(item.name);
     const [longPressTimer, setLongPressTimer] = useState(null);
     const [confirmDelete, setConfirmDelete] = useState(null);
+    const [clickCount, setClickCount] = useState(0);
+    const [clickTimer, setClickTimer] = useState(null);
 
     const isFolder = !!item.children;
     const currentPath = path + '/' + item.name;
     const isExpanded = expandedPaths.includes(currentPath);
     const isSelected = selectedFolder === item || selectedFile === item;
-    const hasContextMenu = contextMenuOpenFor === item; // Check if context menu is open for this item
+    const hasContextMenu = contextMenuOpenFor === item;
     
     const toggle = () => {
         if (isFolder && !isRenaming) {
@@ -356,6 +358,18 @@ function TreeItem({
         }
     }, [pendingAdd, item, isExpanded, toggleExpanded, currentPath]);
 
+    // Clean up timers on unmount
+    useEffect(() => {
+        return () => {
+            if (clickTimer) {
+                clearTimeout(clickTimer);
+            }
+            if (longPressTimer) {
+                clearTimeout(longPressTimer);
+            }
+        };
+    }, [clickTimer, longPressTimer]);
+
     const handleItemClick = () => {
         if (isRenaming) return;
         
@@ -367,9 +381,35 @@ function TreeItem({
         }
     };
 
+    // Updated handleNameClick for double-click detection
     const handleNameClick = (e) => {
         e.stopPropagation();
-        if (!isRenaming) {
+        if (isRenaming) return;
+
+        // Clear any existing timer
+        if (clickTimer) {
+            clearTimeout(clickTimer);
+            setClickTimer(null);
+        }
+
+        const newClickCount = clickCount + 1;
+        setClickCount(newClickCount);
+
+        if (newClickCount === 1) {
+            // First click - set timer for single click action
+            const timer = setTimeout(() => {
+                setClickCount(0);
+                // Single click - just select the item (no rename)
+                if (isFolder) {
+                    onSelect(item, null);
+                } else {
+                    onFileSelect(item);
+                }
+            }, 300); // 300ms delay to detect double click
+            setClickTimer(timer);
+        } else if (newClickCount === 2) {
+            // Double click - start renaming
+            setClickCount(0);
             setIsRenaming(true);
             setRenameValue(item.name);
         }
@@ -394,7 +434,7 @@ function TreeItem({
         setContextMenu({
             x: e.pageX,
             y: e.pageY,
-            item: item, // Make sure we're passing the correct item
+            item: item,
             onRename: () => {
                 setIsRenaming(true);
                 setRenameValue(item.name);
@@ -431,7 +471,7 @@ function TreeItem({
             setContextMenu({
                 x: touch.pageX,
                 y: touch.pageY,
-                item: item, // Make sure we're passing the correct item
+                item: item,
                 onRename: () => {
                     setIsRenaming(true);
                     setRenameValue(item.name);
@@ -484,7 +524,7 @@ function TreeItem({
                             isSelected 
                                 ? 'bg-muted' 
                                 : hasContextMenu 
-                                    ? 'bg-muted/50' // Lighter grey for context menu highlight
+                                    ? 'bg-muted/50'
                                     : ''
                         }`}
                         style={{ paddingLeft: `${depth * 12}px` }}
@@ -520,7 +560,7 @@ function TreeItem({
                             />
                         ) : (
                             <span 
-                                className="truncate cursor-pointer"
+                                className="truncate select-none"
                                 onClick={handleNameClick}
                             >
                                 {item.name}
@@ -581,7 +621,7 @@ function TreeItem({
                                 fullTree={fullTree}
                                 renameItem={renameItem}
                                 deleteItem={deleteItem}
-                                contextMenuOpenFor={contextMenuOpenFor} // Pass down the prop
+                                contextMenuOpenFor={contextMenuOpenFor}
                             />
                         ))}
                     </div>
@@ -943,8 +983,18 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
         if (isInitialLoad) {
             setLoading(true);
         }
+        
+        // Preserve expanded paths during reload (except for initial load)
+        const previousExpandedPaths = isInitialLoad ? [] : expandedPaths;
+        
         const treeData = await loadFileTree(userId);
         setTree(treeData);
+        
+        // Restore expanded paths after tree reload
+        if (!isInitialLoad && previousExpandedPaths.length > 0) {
+            setExpandedPaths(previousExpandedPaths);
+        }
+        
         if (isInitialLoad) {
             setLoading(false);
         }
@@ -1092,13 +1142,14 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
 
         const newFile = await saveFileItem(user.id, name, 'file', parentId);
         if (newFile) {
-            await loadUserFileTree(user.id);
+            // Reload tree but preserve expanded state
+            await loadUserFileTree(user.id, false); // false = not initial load
             
             // Auto-expand parent if needed
             if (parent) {
                 const parentPath = getItemPath(parent, tree);
                 if (parentPath && !expandedPaths.includes(parentPath)) {
-                    toggleExpanded(parentPath, true);
+                    setExpandedPaths(prev => [...prev, parentPath]);
                 }
             }
             
@@ -1122,17 +1173,17 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
 
         const newFolder = await saveFileItem(user.id, name, 'folder', parentId);
         if (newFolder) {
-            await loadUserFileTree(user.id);
+            // Reload tree but preserve expanded state
+            await loadUserFileTree(user.id, false); // false = not initial load
             
             // Auto-expand parent if needed
             if (parent) {
                 const parentPath = getItemPath(parent, tree);
                 if (parentPath && !expandedPaths.includes(parentPath)) {
-                    toggleExpanded(parentPath, true);
+                    setExpandedPaths(prev => [...prev, parentPath]);
                 }
             }
             
-            toast.success(`Folder "${name}" created successfully.`);
         } else {
             toast.error('Failed to create folder. Please try again.');
         }
@@ -1170,7 +1221,7 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
         );
     }
 
-    // Updated renameItem function with duplicate checking
+    // Updated renameItem function to preserve expanded state
     const renameItem = async (item, newName) => {
         if (!user || !item.id) return;
 
@@ -1185,16 +1236,40 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
             return;
         }
 
+        // Store current expanded paths before rename
+        const currentExpandedPaths = [...expandedPaths];
+        
         const success = await updateFileItem(item.id, { name: newName });
         if (success) {
-            await loadUserFileTree(user.id);
-            toast.success(`${item.children ? 'Folder' : 'File'} renamed to "${newName}".`);
+            // Reload tree but preserve expanded state
+            await loadUserFileTree(user.id, false); // false = not initial load
+            
+            // Update any expanded paths that reference the renamed item
+            if (item.children) {
+                const oldPath = getItemPath(item, tree);
+                if (oldPath) {
+                    const updatedPaths = currentExpandedPaths.map(path => {
+                        if (path.includes(oldPath)) {
+                            // Replace the old name with new name in the path
+                            const pathSegments = path.split('/');
+                            const itemNameIndex = pathSegments.findIndex(segment => segment === item.name);
+                            if (itemNameIndex !== -1) {
+                                pathSegments[itemNameIndex] = newName;
+                                return pathSegments.join('/');
+                            }
+                        }
+                        return path;
+                    });
+                    setExpandedPaths(updatedPaths);
+                }
+            }
+            
         } else {
             toast.error('Failed to rename. Please try again.');
         }
     };
 
-    // Updated deleteItem function with success/error messages
+    // Updated deleteItem function to preserve expanded state
     const deleteItem = async (item) => {
         if (!user || !item.id) return;
 
@@ -1209,7 +1284,17 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
         }
         
         if (success) {
-            await loadUserFileTree(user.id);
+            // Clean up expanded paths for deleted items
+            const itemPath = getItemPath(item, tree);
+            if (itemPath) {
+                setExpandedPaths(prev => 
+                    prev.filter(path => !path.startsWith(itemPath))
+                );
+            }
+            
+            // Reload tree but preserve remaining expanded state
+            await loadUserFileTree(user.id, false); // false = not initial load
+            
             // Clear selection if deleted item was selected
             if (selectedFile?.id === item.id) {
                 setSelectedFile(null);
@@ -1378,23 +1463,23 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
     );
 }
 
-// ...rest of helper functions remain exactly the same...
-
-// Add the missing getItemPath function
-function getItemPath(item, tree, currentPath = '') {
-    for (const node of tree) {
-        const nodePath = currentPath + '/' + node.name;
-        
-        if (node === item) {
-            return nodePath;
+// Helper function to update paths when an item is renamed
+function updatePathsAfterRename(paths, oldItemPath, newName) {
+    return paths.map(path => {
+        if (path === oldItemPath) {
+            // Direct path to the renamed item
+            const pathParts = path.split('/');
+            pathParts[pathParts.length - 1] = newName;
+            return pathParts.join('/');
+        } else if (path.startsWith(oldItemPath + '/')) {
+            // Child paths of the renamed item
+            const pathParts = path.split('/');
+            const oldNameIndex = oldItemPath.split('/').length - 1;
+            pathParts[oldNameIndex] = newName;
+            return pathParts.join('/');
         }
-        
-        if (node.children) {
-            const found = getItemPath(item, node.children, nodePath);
-            if (found) return found;
-        }
-    }
-    return null;
+        return path;
+    });
 }
 
 async function deleteFolderRecursively(itemId) {
@@ -1432,4 +1517,21 @@ async function deleteFolderRecursively(itemId) {
     }
 
     return true;
+}
+
+// Add the missing getItemPath function after the existing helper functions
+function getItemPath(item, tree, currentPath = '') {
+    for (const node of tree) {
+        const nodePath = currentPath + '/' + node.name;
+        
+        if (node === item) {
+            return nodePath;
+        }
+        
+        if (node.children) {
+            const found = getItemPath(item, node.children, nodePath);
+            if (found) return found;
+        }
+    }
+    return null;
 }
