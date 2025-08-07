@@ -10,11 +10,11 @@ import {
     Settings,
     ChevronRight as Separator,
     Home,
-    Edit3,
+    Edit,
     Trash2,
     Plus,
     LogOut,
-    User, // Keep User icon
+    Text, 
     ChevronUp
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
@@ -92,9 +92,8 @@ async function saveFileItem(userId, name, type, parentId = null, content = '') {
             name,
             type,
             parent_id: parentId,
-            content,
             path,
-            created_at: new Date().toISOString() // Ensure new items have current timestamp
+            created_at: new Date().toISOString()
         })
         .select()
         .single();
@@ -102,6 +101,24 @@ async function saveFileItem(userId, name, type, parentId = null, content = '') {
     if (error) {
         console.error('Error saving file item:', error);
         return null;
+    }
+
+    // If it's a file, create content record
+    if (type === 'file') {
+        const { error: contentError } = await supabase
+            .from('file_contents')
+            .insert({
+                file_id: data.id,
+                content: content || '',
+                version: 1
+            });
+
+        if (contentError) {
+            console.error('Error creating file content:', contentError);
+            // Optionally delete the file record if content creation fails
+            await supabase.from('file_tree').delete().eq('id', data.id);
+            return null;
+        }
     }
 
     return data;
@@ -140,7 +157,45 @@ async function deleteFileItem(itemId) {
     return true;
 }
 
+// Replace your existing updateFileItem function with this updated version
 async function updateFileItem(itemId, updates) {
+    // Get the current item to check if it's being renamed
+    const { data: currentItem, error: fetchError } = await supabase
+        .from('file_tree')
+        .select('*')
+        .eq('id', itemId)
+        .single();
+
+    if (fetchError) {
+        console.error('Error fetching current item:', fetchError);
+        return null;
+    }
+
+    // If we're renaming, calculate the new path
+    if (updates.name && updates.name !== currentItem.name) {
+        let newPath = updates.name;
+        
+        if (currentItem.parent_id) {
+            const { data: parent, error: parentError } = await supabase
+                .from('file_tree')
+                .select('path')
+                .eq('id', currentItem.parent_id)
+                .single();
+
+            if (parentError) {
+                console.error('Error getting parent path:', parentError);
+                return null;
+            }
+
+            newPath = `${parent.path}/${updates.name}`;
+        }
+
+        // Add the new path to updates
+        updates.path = newPath;
+        updates.updated_at = new Date().toISOString();
+    }
+
+    // Update the item
     const { data, error } = await supabase
         .from('file_tree')
         .update(updates)
@@ -153,7 +208,60 @@ async function updateFileItem(itemId, updates) {
         return null;
     }
 
+    // If we renamed a folder, update all children paths recursively
+    if (updates.name && currentItem.type === 'folder' && updates.name !== currentItem.name) {
+        await updateChildrenPaths(itemId, updates.path);
+    }
+
     return data;
+}
+
+// Add this new function to update children paths recursively
+async function updateChildrenPaths(parentId, newParentPath) {
+    try {
+        // Get all direct children
+        const { data: children, error: childrenError } = await supabase
+            .from('file_tree')
+            .select('id, name, type')
+            .eq('parent_id', parentId);
+
+        if (childrenError) {
+            console.error('Error getting children for path update:', childrenError);
+            return false;
+        }
+
+        if (!children || children.length === 0) {
+            return true; // No children to update
+        }
+
+        // Update each child's path
+        for (const child of children) {
+            const newChildPath = `${newParentPath}/${child.name}`;
+            
+            const { error: updateError } = await supabase
+                .from('file_tree')
+                .update({ 
+                    path: newChildPath,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', child.id);
+
+            if (updateError) {
+                console.error('Error updating child path:', updateError);
+                continue; // Continue with other children even if one fails
+            }
+
+            // If this child is also a folder, recursively update its children
+            if (child.type === 'folder') {
+                await updateChildrenPaths(child.id, newChildPath);
+            }
+        }
+
+        return true;
+    } catch (error) {
+        console.error('Error in updateChildrenPaths:', error);
+        return false;
+    }
 }
 
 // Helper function to generate a path string for a folder or file
@@ -209,7 +317,6 @@ function InputWithIcon({ icon, value, onChange, onSubmit, onCancel, placeholder,
     );
 }
 
-// Update ConfirmDialog to be centered on screen
 function ConfirmDialog({ isOpen, title, message, onConfirm, onCancel }) {
     const dialogRef = useRef(null);
 
@@ -232,7 +339,7 @@ function ConfirmDialog({ isOpen, title, message, onConfirm, onCancel }) {
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
             <div 
                 ref={dialogRef}
-                className="bg-background border border-border rounded-md p-6 max-w-md w-full mx-auto"
+                className="bg-background border border-border rounded-md p-6 max-w-md w-full"
             >
                 <h3 className="text-lg font-semibold mb-2">{title}</h3>
                 <p className="text-muted-foreground mb-6">{message}</p>
@@ -245,7 +352,7 @@ function ConfirmDialog({ isOpen, title, message, onConfirm, onCancel }) {
                     </button>
                     <button
                         onClick={onConfirm}
-                        className="px-4 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
+                        className="px-4 py-2 text-sm bg-muted text-destructive-foreground rounded-md hover:bg-destructive/90 transition-colors"
                     >
                         Delete
                     </button>
@@ -283,7 +390,7 @@ function Breadcrumbs({ path, onNavigate, selectedFile }) {
                             onClick={() => onNavigate(segmentPath)} 
                             className={`hover:text-foreground truncate max-w-[100px] ${isFile ? 'text-foreground font-medium' : ''}`}
                         >
-                            {isFile && <File className="w-3 h-3 mr-1 inline-block" />}
+                            {isFile && <Text className="w-3 h-3 mr-1 inline-block" />}
                             {!isFile && isLastSegment && <Folder className="w-3 h-3 mr-1 inline-block" />}
                             {segment}
                         </button>
@@ -382,7 +489,7 @@ function TreeItem({
         }
     };
 
-    // Updated handleNameClick for double-click detection
+    // Updated handleNameClick for double-click detection - but don't prevent folder toggle
     const handleNameClick = (e) => {
         e.stopPropagation();
         if (isRenaming) return;
@@ -400,8 +507,9 @@ function TreeItem({
             // First click - set timer for single click action
             const timer = setTimeout(() => {
                 setClickCount(0);
-                // Single click - just select the item (no rename)
+                // Single click - handle normally (toggle folder or select file)
                 if (isFolder) {
+                    toggle();
                     onSelect(item, null);
                 } else {
                     onFileSelect(item);
@@ -528,7 +636,7 @@ function TreeItem({
                                     ? 'bg-muted/50'
                                     : ''
                         }`}
-                        style={{ paddingLeft: `${depth * 12}px` }}
+                        style={{ paddingLeft: `${depth * 20}px` }}
                     >
                         {isFolder ? (
                             isExpanded ? (
@@ -537,7 +645,7 @@ function TreeItem({
                                 <ChevronRight className="w-4 h-4 text-muted-foreground" />
                             )
                         ) : (
-                            <File className="mx-1 w-4 h-4 text-muted-foreground" />
+                            <File className="hidden mx-1 w-4 h-4 text-muted-foreground" />
                         )}
                         
                         {isRenaming ? (
@@ -716,7 +824,7 @@ function ContextMenu({ x, y, item, onRename, onDelete, onAddFile, onAddFolder, o
                 onClick={onRename}
                 className="w-full text-left px-3 py-2 hover:bg-muted flex items-center gap-2 transition-colors"
             >
-                <Edit3 className="w-3 h-3" />
+                <Edit className="w-3 h-3" />
                 Rename
             </button>
             <button
@@ -836,7 +944,7 @@ function AccountSection({ user, onLogout }) {
 // Updated Skeleton - removed hardcoded dark background
 function SidebarSkeleton() {
     return (
-        <aside className="h-screen w-72 border-r border-border flex flex-col text-foreground bg-[#0a0a0a] dark:bg-[#0a0a0a] light:bg-[#f5f5f5]">
+        <aside className="h-screen w-72 border-r border-border flex flex-col text-foreground bg-background">
             {/* Header Skeleton */}
             <div className="flex items-center gap-3 p-4 border-b border-border">
                 <Skeleton className="w-8 h-8 rounded-full" />
@@ -967,24 +1075,24 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
     const [expandedPaths, setExpandedPaths] = useState([]);
     const [currentPath, setCurrentPath] = useState('/');
     const [loading, setLoading] = useState(true);
-    const [confirmDelete, setConfirmDelete] = useState(null);
 
-    // Load expanded paths from localStorage on component mount
+    // ADD THIS: Load expanded paths from localStorage on mount
     useEffect(() => {
-        const savedExpandedPaths = localStorage.getItem('sidebar-expanded-paths');
+        const savedExpandedPaths = localStorage.getItem('sidebarExpandedPaths');
         if (savedExpandedPaths) {
             try {
-                const parsed = JSON.parse(savedExpandedPaths);
-                setExpandedPaths(parsed);
+                const expandedPathsArray = JSON.parse(savedExpandedPaths);
+                setExpandedPaths(expandedPathsArray);
             } catch (error) {
-                console.error('Error parsing saved expanded paths:', error);
+                console.error('Error parsing expanded paths from localStorage:', error);
+                setExpandedPaths([]);
             }
         }
     }, []);
 
-    // Save expanded paths to localStorage whenever they change
+    // ADD THIS: Save expanded paths to localStorage whenever they change
     useEffect(() => {
-        localStorage.setItem('sidebar-expanded-paths', JSON.stringify(expandedPaths));
+        localStorage.setItem('sidebarExpandedPaths', JSON.stringify(expandedPaths));
     }, [expandedPaths]);
 
     useEffect(() => {
@@ -1004,12 +1112,16 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
             setLoading(true);
         }
         
-        // Don't preserve expanded paths during initial load - use localStorage instead
+        // Preserve expanded paths during reload (except for initial load)
+        const previousExpandedPaths = isInitialLoad ? [] : expandedPaths;
+        
         const treeData = await loadFileTree(userId);
         setTree(treeData);
         
-        // For non-initial loads, preserve the current expanded state
-        // (localStorage handling is done in the useEffect above)
+        // Restore expanded paths after tree reload
+        if (!isInitialLoad && previousExpandedPaths.length > 0) {
+            setExpandedPaths(previousExpandedPaths);
+        }
         
         if (isInitialLoad) {
             setLoading(false);
@@ -1034,13 +1146,9 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
             if (forceExpand && prev.includes(path)) {
                 return prev; // Already expanded
             }
-            const newPaths = prev.includes(path) && !forceExpand
+            return prev.includes(path) && !forceExpand
                 ? prev.filter(p => p !== path)
                 : [...prev, path];
-            
-            // Save to localStorage immediately
-            localStorage.setItem('sidebar-expanded-paths', JSON.stringify(newPaths));
-            return newPaths;
         });
     };
 
@@ -1147,7 +1255,7 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
         return update(tree);
     };
 
-    // Updated addFile function to preserve expanded state
+    // Updated addFile function with proper path handling
     const addFile = async (parent, fileName = null) => {
         if (!user) return;
 
@@ -1162,18 +1270,14 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
 
         const newFile = await saveFileItem(user.id, name, 'file', parentId);
         if (newFile) {
-            // Reload tree (expanded paths will be preserved via localStorage)
-            await loadUserFileTree(user.id, false);
+            // Reload tree but preserve expanded state
+            await loadUserFileTree(user.id, false); // false = not initial load
             
             // Auto-expand parent if needed
             if (parent) {
                 const parentPath = getItemPath(parent, tree);
                 if (parentPath && !expandedPaths.includes(parentPath)) {
-                    setExpandedPaths(prev => {
-                        const newPaths = [...prev, parentPath];
-                        localStorage.setItem('sidebar-expanded-paths', JSON.stringify(newPaths));
-                        return newPaths;
-                    });
+                    setExpandedPaths(prev => [...prev, parentPath]);
                 }
             }
             
@@ -1182,7 +1286,7 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
         }
     };
 
-    // Updated addFolder function to preserve expanded state
+    // Updated addFolder function with proper path handling
     const addFolder = async (parent, folderName = null) => {
         if (!user) return;
 
@@ -1197,18 +1301,14 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
 
         const newFolder = await saveFileItem(user.id, name, 'folder', parentId);
         if (newFolder) {
-            // Reload tree (expanded paths will be preserved via localStorage)
-            await loadUserFileTree(user.id, false);
+            // Reload tree but preserve expanded state
+            await loadUserFileTree(user.id, false); // false = not initial load
             
             // Auto-expand parent if needed
             if (parent) {
                 const parentPath = getItemPath(parent, tree);
                 if (parentPath && !expandedPaths.includes(parentPath)) {
-                    setExpandedPaths(prev => {
-                        const newPaths = [...prev, parentPath];
-                        localStorage.setItem('sidebar-expanded-paths', JSON.stringify(newPaths));
-                        return newPaths;
-                    });
+                    setExpandedPaths(prev => [...prev, parentPath]);
                 }
             }
             
@@ -1249,7 +1349,7 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
         );
     }
 
-    // Updated renameItem function to update localStorage paths
+    // Updated renameItem function to preserve expanded state
     const renameItem = async (item, newName) => {
         if (!user || !item.id) return;
 
@@ -1264,45 +1364,40 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
             return;
         }
 
+        // Store current expanded paths before rename
+        const currentExpandedPaths = [...expandedPaths];
+        
         const success = await updateFileItem(item.id, { name: newName });
         if (success) {
-            // Update expanded paths if this is a renamed folder
+            // Reload tree but preserve expanded state
+            await loadUserFileTree(user.id, false); // false = not initial load
+            
+            // Update any expanded paths that reference the renamed item
             if (item.children) {
                 const oldPath = getItemPath(item, tree);
                 if (oldPath) {
-                    setExpandedPaths(prev => {
-                        const updatedPaths = prev.map(path => {
-                            if (path === oldPath) {
-                                // Direct path to the renamed item
-                                const pathParts = path.split('/');
-                                pathParts[pathParts.length - 1] = newName;
-                                return pathParts.join('/');
-                            } else if (path.startsWith(oldPath + '/')) {
-                                // Child paths of the renamed item
-                                const pathParts = path.split('/');
-                                const oldNameIndex = oldPath.split('/').length - 1;
-                                pathParts[oldNameIndex] = newName;
-                                return pathParts.join('/');
+                    const updatedPaths = currentExpandedPaths.map(path => {
+                        if (path.includes(oldPath)) {
+                            // Replace the old name with new name in the path
+                            const pathSegments = path.split('/');
+                            const itemNameIndex = pathSegments.findIndex(segment => segment === item.name);
+                            if (itemNameIndex !== -1) {
+                                pathSegments[itemNameIndex] = newName;
+                                return pathSegments.join('/');
                             }
-                            return path;
-                        });
-                        
-                        // Save updated paths to localStorage
-                        localStorage.setItem('sidebar-expanded-paths', JSON.stringify(updatedPaths));
-                        return updatedPaths;
+                        }
+                        return path;
                     });
+                    setExpandedPaths(updatedPaths);
                 }
             }
-            
-            // Reload tree
-            await loadUserFileTree(user.id, false);
             
         } else {
             toast.error('Failed to rename. Please try again.');
         }
     };
 
-    // Updated deleteItem function to clean up localStorage paths
+    // Updated deleteItem function to preserve expanded state
     const deleteItem = async (item) => {
         if (!user || !item.id) return;
 
@@ -1320,16 +1415,13 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
             // Clean up expanded paths for deleted items
             const itemPath = getItemPath(item, tree);
             if (itemPath) {
-                setExpandedPaths(prev => {
-                    const filteredPaths = prev.filter(path => !path.startsWith(itemPath));
-                    // Save updated paths to localStorage
-                    localStorage.setItem('sidebar-expanded-paths', JSON.stringify(filteredPaths));
-                    return filteredPaths;
-                });
+                setExpandedPaths(prev => 
+                    prev.filter(path => !path.startsWith(itemPath))
+                );
             }
             
-            // Reload tree
-            await loadUserFileTree(user.id, false);
+            // Reload tree but preserve remaining expanded state
+            await loadUserFileTree(user.id, false); // false = not initial load
             
             // Clear selection if deleted item was selected
             if (selectedFile?.id === item.id) {
@@ -1366,148 +1458,136 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
     }
 
     return (
-        <>
-            <aside className="h-screen w-72 border-r border-border flex flex-col text-foreground bg-[#0a0a0a] dark:bg-[#0a0a0a] light:bg-[#f5f5f5]">
-                <div className="flex items-center gap-3 p-4 border-b border-border">
-                    <div className="w-8 h-8 rounded-full bg-muted text-sm flex items-center justify-center font-medium uppercase">
-                        {initials}
-                    </div>
-                    <div className="flex flex-col">
-                        <Link href="/account" className="text-sm font-medium hover:opacity-80">
-                            {fullName}
-                        </Link>
-                        <span className="text-xs text-muted-foreground">
-                            {currentDate}
-                        </span>
-                    </div>
+        <aside className="h-screen w-72 border-r border-border flex flex-col text-foreground bg-background">
+            <div className="flex items-center gap-3 p-4 border-b border-border">
+                <div className="w-8 h-8 rounded-full bg-muted text-sm flex items-center justify-center font-medium uppercase">
+                    {initials}
                 </div>
-
-                <div className="flex items-center justify-between p-2 border-b border-border">
-                    <span className="text-xs text-muted-foreground uppercase">Explorer</span>
-                    <div className="flex gap-3">
-                        <button 
-                            onClick={() => setPendingAdd({ 
-                                parent: getCurrentParentFolder(), 
-                                type: 'file', 
-                                input: '' 
-                            })}
-                            className="hover:bg-muted p-1 rounded"
-                            title="Add File"
-                        >
-                            <FilePlus className="w-4 h-4 text-muted-foreground" />
-                        </button>
-                        <button 
-                            onClick={() => setPendingAdd({ 
-                                parent: getCurrentParentFolder(), 
-                                type: 'folder', 
-                                input: '' 
-                            })}
-                            className="hover:bg-muted p-1 rounded"
-                            title="Add Folder"
-                        >
-                            <FolderPlus className="w-4 h-4 text-muted-foreground" />
-                        </button>
-                    </div>
+                <div className="flex flex-col">
+                    <Link href="/account" className="text-sm font-medium hover:opacity-80">
+                        {fullName}
+                    </Link>
+                    <span className="text-xs text-muted-foreground">
+                        {currentDate}
+                    </span>
                 </div>
+            </div>
 
-                <Breadcrumbs 
-                    path={currentPath} 
-                    onNavigate={navigateToPath} 
-                    selectedFile={selectedFile}
-                />
+            <div className="flex items-center justify-between p-2 border-b border-border">
+                <span className="text-xs text-muted-foreground uppercase">Explorer</span>
+                <div className="flex gap-3">
+                    <button 
+                        onClick={() => setPendingAdd({ 
+                            parent: getCurrentParentFolder(), 
+                            type: 'file', 
+                            input: '' 
+                        })}
+                        className="hover:bg-muted p-1 rounded"
+                        title="Add File"
+                    >
+                        <FilePlus className="w-4 h-4 text-muted-foreground" />
+                    </button>
+                    <button 
+                        onClick={() => setPendingAdd({ 
+                            parent: getCurrentParentFolder(), 
+                            type: 'folder', 
+                            input: '' 
+                        })}
+                        className="hover:bg-muted p-1 rounded"
+                        title="Add Folder"
+                    >
+                        <FolderPlus className="w-4 h-4 text-muted-foreground" />
+                    </button>
+                </div>
+            </div>
 
-                <div
-                    className="flex-1 overflow-y-auto p-2 text-sm space-y-1"
-                    onClick={(e) => {
-                        if (e.target === e.currentTarget) {
-                            handleSelection(null, null);
+            <Breadcrumbs 
+                path={currentPath} 
+                onNavigate={navigateToPath} 
+                selectedFile={selectedFile}
+            />
+
+            <div
+                className="flex-1 overflow-y-auto p-2 text-sm space-y-1"
+                onClick={(e) => {
+                    if (e.target === e.currentTarget) {
+                        handleSelection(null, null);
+                    }
+                }}
+            >
+                {/* Show root-level input at the top if adding to root */}
+                {pendingAdd && pendingAdd.parent === null && (
+                    <InputWithIcon
+                        icon={
+                            pendingAdd.type === 'folder' ? (
+                                <Folder className="w-4 h-4 text-muted-foreground" />
+                            ) : (
+                                <File className="w-4 h-4 text-muted-foreground" />
+                            )
                         }
-                    }}
-                >
-                    {/* Show root-level input at the top if adding to root */}
-                    {pendingAdd && pendingAdd.parent === null && (
-                        <InputWithIcon
-                            icon={
-                                pendingAdd.type === 'folder' ? (
-                                    <Folder className="w-4 h-4 text-muted-foreground" />
-                                ) : (
-                                    <File className="w-4 h-4 text-muted-foreground" />
-                                )
-                            }
-                            value={pendingAdd.input}
-                            onChange={(e) => setPendingAdd({ ...pendingAdd, input: e.target.value })}
-                            onSubmit={() => {
-                                if (!pendingAdd.input.trim()) return;
-                                if (pendingAdd.type === 'folder') addFolder(null, pendingAdd.input.trim());
-                                else addFile(null, pendingAdd.input.trim());
-                                setPendingAdd(null);
-                            }}
-                            onCancel={() => setPendingAdd(null)}
-                            placeholder={pendingAdd.type === 'folder' ? 'New folder name' : 'New note'}
-                        />
-                    )}
-
-                    {/* Then show the tree items */}
-                    {tree.map((item, i) => (
-                        <TreeItem
-                            key={item.id || i}
-                            item={item}
-                            onAddFile={addFile}
-                            onAddFolder={addFolder}
-                            onFileSelect={handleFileSelection}
-                            onSelect={handleSelection}
-                            selectedFolder={selectedFolder}
-                            selectedFile={selectedFile}
-                            pendingAdd={pendingAdd}
-                            setPendingAdd={setPendingAdd}
-                            setContextMenu={setContextMenu}
-                            expandedPaths={expandedPaths}
-                            toggleExpanded={toggleExpanded}
-                            path=""
-                            fullTree={tree}
-                            renameItem={renameItem}
-                            deleteItem={deleteItem}
-                            contextMenuOpenFor={contextMenu?.item}
-                            setConfirmDelete={setConfirmDelete}
-                        />
-                    ))}
-                </div>
-
-                <AccountSection user={user} onLogout={handleLogout} />
-
-                <Link
-                    href="/settings"
-                    className="hover:opacity-80 border-t border-border px-4 py-3 text-sm flex justify-between items-center"
-                >
-                    Settings
-                    <Settings className="w-4 h-4 text-muted-foreground" />
-                </Link>
-
-                {contextMenu && (
-                    <ContextMenu
-                        x={contextMenu.x}
-                        y={contextMenu.y}
-                        item={contextMenu.item}
-                        onRename={contextMenu.onRename}
-                        onDelete={contextMenu.onDelete}
-                        onAddFile={contextMenu.onAddFile}
-                        onAddFolder={contextMenu.onAddFolder}
-                        onClose={() => setContextMenu(null)}
+                        value={pendingAdd.input}
+                        onChange={(e) => setPendingAdd({ ...pendingAdd, input: e.target.value })}
+                        onSubmit={() => {
+                            if (!pendingAdd.input.trim()) return;
+                            if (pendingAdd.type === 'folder') addFolder(null, pendingAdd.input.trim());
+                            else addFile(null, pendingAdd.input.trim());
+                            setPendingAdd(null);
+                        }}
+                        onCancel={() => setPendingAdd(null)}
+                        placeholder={pendingAdd.type === 'folder' ? 'New folder name' : 'New note'}
                     />
                 )}
-            </aside>
 
-            {/* Render ConfirmDialog outside of sidebar hierarchy */}
-            {confirmDelete && (
-                <ConfirmDialog
-                    isOpen={true}
-                    title={confirmDelete.title}
-                    message={confirmDelete.message}
-                    onConfirm={confirmDelete.onConfirm}
-                    onCancel={confirmDelete.onCancel}
+                {/* Then show the tree items */}
+                {tree.map((item, i) => (
+                    <TreeItem
+                        key={item.id || i}
+                        item={item}
+                        onAddFile={addFile}
+                        onAddFolder={addFolder}
+                        onFileSelect={handleFileSelection}
+                        onSelect={handleSelection}
+                        selectedFolder={selectedFolder}
+                        selectedFile={selectedFile}
+                        pendingAdd={pendingAdd}
+                        setPendingAdd={setPendingAdd}
+                        setContextMenu={setContextMenu}
+                        expandedPaths={expandedPaths}
+                        toggleExpanded={toggleExpanded}
+                        path=""
+                        fullTree={tree}
+                        renameItem={renameItem}
+                        deleteItem={deleteItem}
+                        contextMenuOpenFor={contextMenu?.item}
+                    />
+                ))}
+            </div>
+
+            {/* Updated Account Section */}
+            <AccountSection user={user} onLogout={handleLogout} />
+
+            {/* Settings Link */}
+            <Link
+                href="/settings"
+                className="hover:opacity-80 border-t border-border px-4 py-3 text-sm flex justify-between items-center"
+            >
+                Settings
+                <Settings className="w-4 h-4 text-muted-foreground" />
+            </Link>
+
+            {contextMenu && (
+                <ContextMenu
+                    x={contextMenu.x}
+                    y={contextMenu.y}
+                    item={contextMenu.item}
+                    onRename={contextMenu.onRename}
+                    onDelete={contextMenu.onDelete}
+                    onAddFile={contextMenu.onAddFile}
+                    onAddFolder={contextMenu.onAddFolder}
+                    onClose={() => setContextMenu(null)}
                 />
             )}
-        </>
+        </aside>
     );
 }
 

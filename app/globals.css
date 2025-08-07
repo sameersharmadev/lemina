@@ -134,3 +134,411 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans);
 }
+/* Replace your existing Tiptap styles with these fixed ones */
+
+/* Tiptap Editor Styles */
+.editor-content .ProseMirror {
+    outline: none;
+    padding: 1.5rem;
+    min-height: 100%;
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    line-height: 1.5; /* Reduced from 1.6 */
+    color: hsl(var(--foreground));
+}
+
+.editor-content .ProseMirror p.is-editor-empty:first-child::before {
+    content: attr(data-placeholder);
+    float: left;
+    color: hsl(var(--muted-foreground) / 0.4); 
+    opacity: 0.5;
+    pointer-events: none;
+    height: 0;
+    font-style: italic; 
+}
+
+/* Text formatting */
+.editor-content .ProseMirror strong {
+    font-weight: 600;
+    color: inherit;
+}
+
+.editor-content .ProseMirror em {
+    font-style: italic;
+    color: inherit;
+}
+
+.editor-content .ProseMirror s {
+    text-decoration: line-through;
+    color: inherit;
+}
+
+.editor-content .ProseMirror code {
+    background-color: hsl(var(--muted));
+    padding: 0.2em 0.4em;
+    border-radius: 3px;
+    font-family: "Monaco", "Menlo", "Ubuntu Mono", monospace;
+    font-size: 0.9em;
+    color: inherit;
+}
+
+.editor-content .ProseMirror .editor-highlight {
+    background-color: #fbbf24;
+    border-radius: 0.25rem;
+    padding: 0.125rem 0.25rem;
+    color: #000;
+}
+
+/* Headings with better spacing */
+.editor-content .ProseMirror h1 {
+    font-size: 2em;
+    font-weight: 700;
+    margin-top: 1.5rem; /* Reduced */
+    margin-bottom: 0.75rem; /* Reduced */
+    line-height: 1.2;
+    color: inherit;
+}
+
+.editor-content .ProseMirror h1:first-child {
+    margin-top: 0;
+}
+
+.editor-content .ProseMirror h2 {
+    font-size: 1.5em;
+    font-weight: 600;
+    margin-top: 1.25rem; /* Reduced */
+    margin-bottom: 0.5rem; /* Reduced */
+    line-height: 1.3;
+    color: inherit;
+}
+
+.editor-content .ProseMirror h3 {
+    font-size: 1.25em;
+    font-weight: 600;
+    margin-top: 1rem; /* Reduced */
+    margin-bottom: 0.375rem; /* Reduced */
+    line-height: 1.4;
+    color: inherit;
+}
+
+/* Paragraphs with better spacing */
+.editor-content .ProseMirror p {
+    margin-top: 0;
+    margin-bottom: 0.75rem; /* Reduced from 1rem */
+    color: inherit;
+    line-height: 1.5; /* Explicit line height */
+}
+
+/* Regular Lists - Fixed visibility and spacing */
+.editor-content .ProseMirror ul:not([data-type="taskList"]),
+.editor-content .ProseMirror ol {
+    margin: 0.75rem 0; /* Reduced spacing */
+    padding-left: 1.5rem;
+    list-style: revert;
+}
+
+.editor-content .ProseMirror ul:not([data-type="taskList"]) {
+    list-style-type: disc;
+}
+
+.editor-content .ProseMirror ol {
+    list-style-type: decimal;
+}
+
+.editor-content .ProseMirror li {
+    margin: 0.125rem 0; /* Reduced spacing */
+    color: inherit;
+    display: list-item;
+    line-height: 1.4; /* Tighter line height for lists */
+}
+
+.editor-content .ProseMirror li p {
+    margin: 0;
+    line-height: 1.4;
+}
+
+/* Task list styles */
+.editor-content .ProseMirror .task-list {
+    list-style: none;
+    padding-left: 0;
+    margin: 0.75rem 0;
+}
+
+.editor-content .ProseMirror .task-list .task-item {
+    display: flex;
+    align-items: flex-start;
+    margin: 0.25rem 0;
+    list-style: none;
+    position: relative;
+}
+
+/* Fix the checkbox positioning */
+.editor-content .ProseMirror .task-list .task-item > label {
+    flex: 0 0 auto;
+    margin-right: 0.5rem;
+    margin-top: 0.125rem; /* Slightly adjust vertical alignment */
+    user-select: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+}
+
+.editor-content .ProseMirror .task-list .task-item > label > input[type="checkbox"] {
+    margin: 0;
+    cursor: pointer;
+    width: 1rem;
+    height: 1rem;
+}
+
+/* Fix the content div to allow proper text flow */
+.editor-content .ProseMirror .task-list .task-item > div {
+    flex: 1 1 auto;
+    min-width: 0; /* Important: allows text to wrap properly */
+    line-height: 1.5;
+}
+
+/* Ensure paragraphs in task items behave correctly */
+.editor-content .ProseMirror .task-list .task-item > div > p {
+    margin: 0;
+    line-height: 1.5;
+    min-height: 1.5em; /* Ensure minimum height for cursor placement */
+    word-wrap: break-word;
+}
+
+/* Completed task styling */
+.editor-content .ProseMirror .task-list .task-item[data-checked="true"] > div > p {
+    text-decoration: line-through;
+    opacity: 0.6;
+    color: hsl(var(--muted-foreground));
+}
+
+/* Nested task lists */
+.editor-content .ProseMirror .task-list .task-item .task-list {
+    margin-top: 0.25rem;
+    margin-bottom: 0;
+    padding-left: 1.5rem;
+}
+
+/* Fix cursor positioning in empty task items */
+.editor-content .ProseMirror .task-list .task-item > div:empty::before {
+    content: '';
+    display: inline-block;
+    width: 1px;
+    height: 1.5em;
+}
+
+/* Ensure proper focus styles */
+.editor-content .ProseMirror .task-list .task-item > div:focus {
+    outline: none;
+}
+
+/* Fix for Tiptap's specific task item structure */
+.editor-content .ProseMirror ul[data-type="taskList"] {
+    list-style: none !important;
+    padding-left: 0 !important;
+}
+
+.editor-content .ProseMirror li[data-type="taskItem"] {
+    display: flex !important;
+    align-items: flex-start !important;
+    list-style: none !important;
+    margin: 0.25rem 0 !important;
+}
+
+.editor-content .ProseMirror li[data-type="taskItem"] > label {
+    flex: 0 0 auto !important;
+    margin-right: 0.5rem !important;
+    margin-top: 0.125rem !important;
+    user-select: none !important;
+    cursor: pointer !important;
+}
+
+.editor-content .ProseMirror li[data-type="taskItem"] > div {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+}
+
+.editor-content .ProseMirror li[data-type="taskItem"] > div > p {
+    margin: 0 !important;
+    line-height: 1.5 !important;
+    min-height: 1.5em !important;
+}
+
+/* Ensure checkbox styling is consistent */
+.editor-content .ProseMirror input[type="checkbox"] {
+    accent-color: hsl(var(--primary));
+    width: 1rem;
+    height: 1rem;
+    margin: 0;
+}
+
+/* Dark mode checkbox adjustments */
+@media (prefers-color-scheme: dark) {
+    .editor-content .ProseMirror .task-list .task-item[data-checked="true"] > div > p {
+        color: hsl(var(--muted-foreground));
+    }
+}
+
+.dark .editor-content .ProseMirror .task-list .task-item[data-checked="true"] > div > p {
+    color: hsl(var(--muted-foreground));
+}
+
+/* Add this scrollbar styling after your existing styles */
+
+/* Custom Scrollbar Styles */
+/* Light mode scrollbar */
+.editor-content {
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 transparent;
+}
+
+.editor-content::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.editor-content::-webkit-scrollbar-track {
+    background: transparent;
+    border-radius: 4px;
+}
+
+.editor-content::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.editor-content::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+
+.editor-content::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
+/* General application scrollbar - light mode */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: #e2e8f0 transparent;
+}
+
+*::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+    background: #e2e8f0;
+    border-radius: 3px;
+    transition: all 0.2s ease;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+    background: #cbd5e1;
+}
+
+*::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
+/* DARK MODE - Fixed colors that look good */
+@media (prefers-color-scheme: dark) {
+    .editor-content {
+        scrollbar-color: #4a5568 transparent;
+    }
+
+    .editor-content::-webkit-scrollbar-thumb {
+        background: #4a5568;
+    }
+
+    .editor-content::-webkit-scrollbar-thumb:hover {
+        background: #718096;
+    }
+
+    /* General scrollbar - dark mode */
+    * {
+        scrollbar-color: #2d3748 transparent;
+    }
+
+    *::-webkit-scrollbar-thumb {
+        background: #2d3748;
+    }
+
+    *::-webkit-scrollbar-thumb:hover {
+        background: #4a5568;
+    }
+
+    /* Dark mode background for scrollbar tracks */
+    *::-webkit-scrollbar-track {
+        background: rgba(45, 55, 72, 0.1);
+    }
+
+    .editor-content::-webkit-scrollbar-track {
+        background: rgba(74, 85, 104, 0.1);
+    }
+}
+
+/* Class-based dark mode support (.dark class) */
+.dark .editor-content {
+    scrollbar-color: #4a5568 transparent;
+}
+
+.dark .editor-content::-webkit-scrollbar-thumb {
+    background: #4a5568;
+}
+
+.dark .editor-content::-webkit-scrollbar-thumb:hover {
+    background: #718096;
+}
+
+.dark .editor-content::-webkit-scrollbar-track {
+    background: rgba(74, 85, 104, 0.1);
+}
+
+.dark * {
+    scrollbar-color: #2d3748 transparent;
+}
+
+.dark *::-webkit-scrollbar-thumb {
+    background: #2d3748;
+}
+
+.dark *::-webkit-scrollbar-thumb:hover {
+    background: #4a5568;
+}
+
+.dark *::-webkit-scrollbar-track {
+    background: rgba(45, 55, 72, 0.1);
+}
+
+/* Smooth scrolling behavior */
+html {
+    scroll-behavior: smooth;
+}
+
+.editor-content .ProseMirror {
+    scroll-behavior: smooth;
+}
+
+/* Optional: Even darker scrollbar for ultra-dark theme */
+.dark {
+    /* Alternative darker colors if you prefer */
+    /* 
+    scrollbar-color: #1a202c transparent;
+    */
+}
+
+.dark *::-webkit-scrollbar-thumb {
+    /* Alternative: Use even darker colors */
+    /* background: #1a202c; */
+    background: #2d3748;
+}
+
+.dark *::-webkit-scrollbar-thumb:hover {
+    /* Alternative hover state */
+    /* background: #2d3748; */
+    background: #4a5568;
+}
