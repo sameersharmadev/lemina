@@ -14,8 +14,11 @@ import {
     Trash2,
     Plus,
     LogOut,
-    Text, 
-    ChevronUp
+    Text,
+    ChevronUp,
+    Copy,
+    Scissors as Cut,
+    Clipboard
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
@@ -53,17 +56,17 @@ async function loadFileTree(userId) {
                 // First sort by type (folders first)
                 const aIsFolder = a.type === 'folder';
                 const bIsFolder = b.type === 'folder';
-                
+
                 if (aIsFolder !== bIsFolder) {
                     return aIsFolder ? -1 : 1; // Folders first
                 }
-                
+
                 // Then sort by creation date (newest first within same type)
                 const aDate = new Date(a.created_at);
                 const bDate = new Date(b.created_at);
                 return bDate - aDate; // Newest first
             });
-        
+
         return children;
     };
 
@@ -79,7 +82,7 @@ async function saveFileItem(userId, name, type, parentId = null, content = '') {
             .select('path')
             .eq('id', parentId)
             .single();
-        
+
         if (parent) {
             path = `${parent.path}/${name}`;
         }
@@ -125,6 +128,11 @@ async function saveFileItem(userId, name, type, parentId = null, content = '') {
 }
 
 async function deleteFileItem(itemId) {
+    // Close any open tabs for this file before deletion
+    if (window.closeTabsForFile) {
+        window.closeTabsForFile(itemId);
+    }
+
     // First get all children if it's a folder
     const { data: children, error: childrenError } = await supabase
         .from('file_tree')
@@ -156,7 +164,6 @@ async function deleteFileItem(itemId) {
 
     return true;
 }
-
 // Replace your existing updateFileItem function with this updated version
 async function updateFileItem(itemId, updates) {
     // Get the current item to check if it's being renamed
@@ -174,7 +181,7 @@ async function updateFileItem(itemId, updates) {
     // If we're renaming, calculate the new path
     if (updates.name && updates.name !== currentItem.name) {
         let newPath = updates.name;
-        
+
         if (currentItem.parent_id) {
             const { data: parent, error: parentError } = await supabase
                 .from('file_tree')
@@ -237,10 +244,10 @@ async function updateChildrenPaths(parentId, newParentPath) {
         // Update each child's path
         for (const child of children) {
             const newChildPath = `${newParentPath}/${child.name}`;
-            
+
             const { error: updateError } = await supabase
                 .from('file_tree')
-                .update({ 
+                .update({
                     path: newChildPath,
                     updated_at: new Date().toISOString()
                 })
@@ -267,13 +274,13 @@ async function updateChildrenPaths(parentId, newParentPath) {
 // Helper function to generate a path string for a folder or file
 function generatePath(item, tree) {
     if (!item) return '/';
-    
+
     const findPath = (nodes, target, currentPath = '') => {
         for (const node of nodes) {
             if (node === target) {
                 return currentPath + '/' + node.name;
             }
-            
+
             if (node.children) {
                 const found = findPath(node.children, target, currentPath + '/' + node.name);
                 if (found) return found;
@@ -281,7 +288,7 @@ function generatePath(item, tree) {
         }
         return null;
     };
-    
+
     return findPath(tree, item) || '/';
 }
 
@@ -327,7 +334,7 @@ function ConfirmDialog({ isOpen, title, message, onConfirm, onCancel }) {
                     onCancel();
                 }
             };
-            
+
             document.addEventListener('keydown', handleEscape);
             return () => document.removeEventListener('keydown', handleEscape);
         }
@@ -337,7 +344,7 @@ function ConfirmDialog({ isOpen, title, message, onConfirm, onCancel }) {
 
     return (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-            <div 
+            <div
                 ref={dialogRef}
                 className="bg-background border border-border rounded-md p-6 max-w-md w-full"
             >
@@ -365,29 +372,29 @@ function ConfirmDialog({ isOpen, title, message, onConfirm, onCancel }) {
 function Breadcrumbs({ path, onNavigate, selectedFile }) {
     const segments = path.split('/').filter(Boolean);
     const isFileSelected = !!selectedFile;
-    
+
     return (
         <div className="flex items-center gap-1 text-xs text-muted-foreground overflow-x-auto px-2 py-1 border-b border-border">
-            <button 
-                onClick={() => onNavigate(null)} 
+            <button
+                onClick={() => onNavigate(null)}
                 className="flex items-center hover:text-foreground"
             >
                 root
             </button>
-            
+
             {segments.map((segment, index) => {
                 // Build the path up to this segment
                 const segmentPath = '/' + segments.slice(0, index + 1).join('/');
                 const isLastSegment = index === segments.length - 1;
-                
+
                 // Last segment could be a file if we have a selected file
                 const isFile = isFileSelected && isLastSegment;
-                
+
                 return (
                     <div key={index} className="flex items-center">
                         <Separator className="w-3 h-3 mx-1" />
-                        <button 
-                            onClick={() => onNavigate(segmentPath)} 
+                        <button
+                            onClick={() => onNavigate(segmentPath)}
                             className={`hover:text-foreground truncate max-w-[100px] ${isFile ? 'text-foreground font-medium' : ''}`}
                         >
                             {isFile && <Text className="w-3 h-3 mr-1 inline-block" />}
@@ -419,7 +426,11 @@ function TreeItem({
     fullTree,
     renameItem,
     deleteItem,
-    contextMenuOpenFor
+    contextMenuOpenFor,
+    clipboard,
+    onCopy,
+    onCut,
+    onPaste
 }) {
     const [isRenaming, setIsRenaming] = useState(false);
     const [renameValue, setRenameValue] = useState(item.name);
@@ -433,7 +444,7 @@ function TreeItem({
     const isExpanded = expandedPaths.includes(currentPath);
     const isSelected = selectedFolder === item || selectedFile === item;
     const hasContextMenu = contextMenuOpenFor === item;
-    
+
     const toggle = () => {
         if (isFolder && !isRenaming) {
             toggleExpanded(currentPath);
@@ -446,11 +457,11 @@ function TreeItem({
             // First sort by type (folders always first)
             const aIsFolder = a.type === 'folder';
             const bIsFolder = b.type === 'folder';
-            
+
             if (aIsFolder !== bIsFolder) {
                 return aIsFolder ? -1 : 1; // Folders first
             }
-            
+
             // Within same type, sort by creation date (newest first)
             const aDate = new Date(a.created_at);
             const bDate = new Date(b.created_at);
@@ -480,7 +491,7 @@ function TreeItem({
 
     const handleItemClick = () => {
         if (isRenaming) return;
-        
+
         if (isFolder) {
             toggle();
             onSelect(item, null);
@@ -568,7 +579,12 @@ function TreeItem({
             onAddFolder: isFolder ? (folder) => {
                 setPendingAdd({ parent: folder, type: 'folder', input: '' });
                 setContextMenu(null);
-            } : undefined
+            } : undefined,
+            onCopy: () => onCopy(item),
+            onCut: () => onCut(item),
+            onPaste: () => onPaste(item),
+            canPaste: clipboard !== null,
+            clipboard: clipboard
         });
     };
 
@@ -605,7 +621,12 @@ function TreeItem({
                 onAddFolder: isFolder ? (folder) => {
                     setPendingAdd({ parent: folder, type: 'folder', input: '' });
                     setContextMenu(null);
-                } : undefined
+                } : undefined,
+                onCopy: () => onCopy(item),
+                onCut: () => onCut(item),
+                onPaste: () => onPaste(item),
+                canPaste: clipboard !== null,
+                clipboard: clipboard
             });
         }, 500);
         setLongPressTimer(timer);
@@ -629,13 +650,12 @@ function TreeItem({
                 <div className="flex items-center justify-between pr-2">
                     <button
                         onClick={handleItemClick}
-                        className={`flex items-center gap-1 hover:bg-accent hover:opacity-80 py-1 px-2 rounded w-full text-left ${
-                            isSelected 
-                                ? 'bg-muted' 
-                                : hasContextMenu 
+                        className={`flex items-center gap-1 hover:bg-accent hover:opacity-80 py-1 px-2 rounded w-full text-left ${isSelected
+                                ? 'bg-muted'
+                                : hasContextMenu
                                     ? 'bg-muted/50'
                                     : ''
-                        }`}
+                            }`}
                         style={{ paddingLeft: `${depth * 20}px` }}
                     >
                         {isFolder ? (
@@ -647,7 +667,7 @@ function TreeItem({
                         ) : (
                             <File className="hidden mx-1 w-4 h-4 text-muted-foreground" />
                         )}
-                        
+
                         {isRenaming ? (
                             <input
                                 autoFocus
@@ -668,7 +688,7 @@ function TreeItem({
                                 onClick={(e) => e.stopPropagation()}
                             />
                         ) : (
-                            <span 
+                            <span
                                 className="truncate select-none"
                                 onClick={handleNameClick}
                             >
@@ -731,6 +751,10 @@ function TreeItem({
                                 renameItem={renameItem}
                                 deleteItem={deleteItem}
                                 contextMenuOpenFor={contextMenuOpenFor}
+                                clipboard={clipboard}
+                                onCopy={onCopy}
+                                onCut={onCut}
+                                onPaste={onPaste}
                             />
                         ))}
                     </div>
@@ -751,7 +775,7 @@ function TreeItem({
 }
 
 // Updated ContextMenu to handle the passed handlers correctly
-function ContextMenu({ x, y, item, onRename, onDelete, onAddFile, onAddFolder, onClose }) {
+function ContextMenu({ x, y, item, onRename, onDelete, onAddFile, onAddFolder, onClose, onCopy, onCut, onPaste, canPaste, clipboard }) {
     const menuRef = useRef(null);
 
     useEffect(() => {
@@ -760,7 +784,7 @@ function ContextMenu({ x, y, item, onRename, onDelete, onAddFile, onAddFolder, o
                 onClose();
             }
         };
-        
+
         const handleEscape = (e) => {
             if (e.key === 'Escape') {
                 onClose();
@@ -769,7 +793,7 @@ function ContextMenu({ x, y, item, onRename, onDelete, onAddFile, onAddFolder, o
 
         document.addEventListener('mousedown', handleClickOutside);
         document.addEventListener('keydown', handleEscape);
-        
+
         return () => {
             document.removeEventListener('mousedown', handleClickOutside);
             document.removeEventListener('keydown', handleEscape);
@@ -782,11 +806,11 @@ function ContextMenu({ x, y, item, onRename, onDelete, onAddFile, onAddFolder, o
             const rect = menuRef.current.getBoundingClientRect();
             const viewportWidth = window.innerWidth;
             const viewportHeight = window.innerHeight;
-            
+
             if (rect.right > viewportWidth) {
                 menuRef.current.style.left = `${x - rect.width}px`;
             }
-            
+
             if (rect.bottom > viewportHeight) {
                 menuRef.current.style.top = `${y - rect.height}px`;
             }
@@ -834,6 +858,30 @@ function ContextMenu({ x, y, item, onRename, onDelete, onAddFile, onAddFolder, o
                 <Trash2 className="w-3 h-3" />
                 Delete
             </button>
+            {/* Added Copy, Cut, Paste options */}
+            <div className="h-px bg-border my-1" />
+            <button
+                onClick={onCopy}
+                className="w-full text-left px-3 py-2 hover:bg-muted flex items-center gap-2 transition-colors"
+            >
+                <Copy className="w-3 h-3" />
+                Copy
+            </button>
+            <button
+                onClick={onCut}
+                className="w-full text-left px-3 py-2 hover:bg-muted flex items-center gap-2 transition-colors"
+            >
+                <Cut className="w-3 h-3" />
+                Cut
+            </button>
+            <button
+                onClick={onPaste}
+                className={`w-full text-left px-3 py-2 flex items-center gap-2 transition-colors ${!canPaste ? 'opacity-50 cursor-not-allowed' : 'hover:bg-muted'}`}
+                disabled={!canPaste}
+            >
+                <Clipboard className="w-3 h-3" />
+                Paste
+            </button>
         </div>
     );
 }
@@ -852,15 +900,15 @@ function getParent(child, nodes = [], parent = null) {
 // Find a node (folder or file) by path
 function findNodeByPath(path, tree) {
     if (path === '/' || !path) return null; // Root level
-    
+
     const segments = path.split('/').filter(Boolean);
     let currentNodes = tree;
     let current = null;
-    
+
     for (let i = 0; i < segments.length; i++) {
         const segment = segments[i];
         const isLastSegment = i === segments.length - 1;
-        
+
         // For the last segment, search for both files and folders
         if (isLastSegment) {
             current = currentNodes.find(node => node.name === segment);
@@ -868,9 +916,9 @@ function findNodeByPath(path, tree) {
             // For intermediate segments, only search for folders
             current = currentNodes.find(node => node.name === segment && node.children);
         }
-        
+
         if (!current) return null;
-        
+
         // If it's a folder and not the last segment, continue traversing
         if (current.children && !isLastSegment) {
             currentNodes = current.children;
@@ -879,7 +927,7 @@ function findNodeByPath(path, tree) {
             return null;
         }
     }
-    
+
     return current;
 }
 
@@ -895,9 +943,35 @@ function AccountSection({ user, onLogout }) {
 
     const fullName = user?.user_metadata?.full_name || user?.user_metadata?.username || 'Unknown User';
 
+    const handleAccountClick = () => {
+        // Open account as a tab instead of navigating
+        if (window.openSpecialTab) {
+            window.openSpecialTab({
+                id: 'account',
+                name: 'Account Settings',
+                type: 'account',
+                path: '/account'
+            });
+        }
+        setIsExpanded(false);
+    };
+
+    const handleSettingsClick = () => {
+        // Open settings as a tab
+        if (window.openSpecialTab) {
+            window.openSpecialTab({
+                id: 'settings',
+                name: 'Settings',
+                type: 'settings',
+                path: '/settings'
+            });
+        }
+        setIsExpanded(false); // Add this line to close the menu
+    };
+
     return (
         <div className="border-t border-border relative">
-            {/* Account Header - now shows user icon instead of chevron */}
+            {/* Account Header */}
             <button
                 onClick={() => setIsExpanded(!isExpanded)}
                 className="w-full px-4 py-3 text-sm flex justify-between items-center hover:bg-muted/50 transition-colors"
@@ -906,23 +980,34 @@ function AccountSection({ user, onLogout }) {
                 <ChevronUp className="w-4 h-4 text-muted-foreground" />
             </button>
 
-            {/* Expanded Options - now appear above the button */}
+            {/* Expanded Options */}
             {isExpanded && (
                 <div className="absolute bottom-full left-0 right-0 bg-background border border-border border-b-0 rounded-t-md">
                     {/* Profile */}
-                    <Link
-                        href="/account"
-                        className="flex items-center gap-3 px-4 py-2 text-sm hover:bg-muted/50 transition-colors"
-                        onClick={() => setIsExpanded(false)}
+                    <button
+                        onClick={handleAccountClick}
+                        className="flex items-center gap-3 px-4 py-2 text-sm hover:bg-muted/50 transition-colors w-full"
                     >
                         <div className="w-6 h-6 rounded-full bg-muted text-xs flex items-center justify-center font-medium">
                             {initials}
                         </div>
-                        <div className="flex flex-col">
+                        <div className="flex flex-col text-left">
                             <span className="text-sm font-medium">{fullName}</span>
-                            <span className="text-xs text-muted-foreground">View profile</span>
+                            <span className="text-xs text-muted-foreground">Account settings</span>
                         </div>
-                    </Link>
+                    </button>
+
+                    {/* Settings */}
+                    <button
+                        onClick={handleSettingsClick}
+                        className="flex items-center gap-3 px-4 py-2 text-sm hover:bg-muted/50 transition-colors w-full"
+                    >
+                        <Settings className="w-4 h-4 text-muted-foreground" />
+                        <div className="flex flex-col text-left">
+                            <span className="text-sm font-medium">Settings</span>
+                            <span className="text-xs text-muted-foreground">Preferences</span>
+                        </div>
+                    </button>
 
                     {/* Logout */}
                     <button
@@ -979,7 +1064,7 @@ function SidebarSkeleton() {
                         <Skeleton className="w-4 h-4" />
                         <Skeleton className="h-4 flex-1" />
                     </div>
-                    
+
                     {/* Nested items */}
                     <div className="ml-4 space-y-1">
                         <div className="flex items-center gap-1 py-1 px-2">
@@ -1003,7 +1088,7 @@ function SidebarSkeleton() {
                         <Skeleton className="w-4 h-4 mx-1" />
                         <Skeleton className="h-4 w-2/3" />
                     </div>
-                    
+
                     <div className="flex items-center gap-1 py-1 px-2">
                         <Skeleton className="w-4 h-4 mx-1" />
                         <Skeleton className="h-4 w-3/5" />
@@ -1019,7 +1104,7 @@ function SidebarSkeleton() {
                         <Skeleton className="w-4 h-4" />
                         <Skeleton className="h-4 w-1/2" />
                     </div>
-                    
+
                     <div className="ml-4 space-y-1">
                         <div className="flex items-center gap-1 py-1 px-2">
                             <Skeleton className="w-4 h-4 mx-1" />
@@ -1055,12 +1140,6 @@ function SidebarSkeleton() {
                     <Skeleton className="w-4 h-4" />
                 </div>
             </div>
-
-            {/* Settings Link Skeleton */}
-            <div className="border-t border-border px-4 py-3 flex justify-between items-center">
-                <Skeleton className="h-4 w-12" />
-                <Skeleton className="w-4 h-4" />
-            </div>
         </aside>
     );
 }
@@ -1075,6 +1154,8 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
     const [expandedPaths, setExpandedPaths] = useState([]);
     const [currentPath, setCurrentPath] = useState('/');
     const [loading, setLoading] = useState(true);
+    const [clipboard, setClipboard] = useState(null);
+    const [conflictDialog, setConflictDialog] = useState(null);
 
     // ADD THIS: Load expanded paths from localStorage on mount
     useEffect(() => {
@@ -1111,18 +1192,18 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
         if (isInitialLoad) {
             setLoading(true);
         }
-        
+
         // Preserve expanded paths during reload (except for initial load)
         const previousExpandedPaths = isInitialLoad ? [] : expandedPaths;
-        
+
         const treeData = await loadFileTree(userId);
         setTree(treeData);
-        
+
         // Restore expanded paths after tree reload
         if (!isInitialLoad && previousExpandedPaths.length > 0) {
             setExpandedPaths(previousExpandedPaths);
         }
-        
+
         if (isInitialLoad) {
             setLoading(false);
         }
@@ -1155,7 +1236,7 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
     const handleSelection = (folder, file = null) => {
         setSelectedFolder(folder);
         setSelectedFile(file);
-        
+
         if (file && externalFileSelectHandler) {
             externalFileSelectHandler(file);
         }
@@ -1177,10 +1258,10 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
             setSelectedFile(null);
             return;
         }
-        
+
         const node = findNodeByPath(path, tree);
         if (!node) return;
-        
+
         if (node.children) {
             // It's a folder
             setSelectedFolder(node);
@@ -1193,19 +1274,19 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
                 externalFileSelectHandler(node);
             }
         }
-        
+
         // Ensure path to this node is expanded
         const segments = path.split('/').filter(Boolean);
         let currentPath = '';
-        
+
         for (let i = 0; i < segments.length; i++) {
             const isLastSegment = i === segments.length - 1;
             const segment = segments[i];
             currentPath += '/' + segment;
-            
+
             // Don't expand the last segment if it's a file
             if (isLastSegment && !node.children) continue;
-            
+
             if (!expandedPaths.includes(currentPath)) {
                 toggleExpanded(currentPath, true);
             }
@@ -1261,7 +1342,7 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
 
         const parentId = parent?.id || null;
         const name = fileName || 'Untitled';
-        
+
         // Check for duplicates
         if (checkNameExists(name, parentId, tree)) {
             toast.error(`A file named "${name}" already exists in this location.`);
@@ -1272,7 +1353,7 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
         if (newFile) {
             // Reload tree but preserve expanded state
             await loadUserFileTree(user.id, false); // false = not initial load
-            
+
             // Auto-expand parent if needed
             if (parent) {
                 const parentPath = getItemPath(parent, tree);
@@ -1280,7 +1361,7 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
                     setExpandedPaths(prev => [...prev, parentPath]);
                 }
             }
-            
+
         } else {
             toast.error('Failed to create file. Please try again.');
         }
@@ -1292,7 +1373,7 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
 
         const parentId = parent?.id || null;
         const name = folderName || 'New Folder';
-        
+
         // Check for duplicates
         if (checkNameExists(name, parentId, tree)) {
             toast.error(`A folder named "${name}" already exists in this location.`);
@@ -1303,7 +1384,7 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
         if (newFolder) {
             // Reload tree but preserve expanded state
             await loadUserFileTree(user.id, false); // false = not initial load
-            
+
             // Auto-expand parent if needed
             if (parent) {
                 const parentPath = getItemPath(parent, tree);
@@ -1311,7 +1392,7 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
                     setExpandedPaths(prev => [...prev, parentPath]);
                 }
             }
-            
+
         } else {
             toast.error('Failed to create folder. Please try again.');
         }
@@ -1321,7 +1402,7 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
     function checkNameExists(name, parentId, tree, excludeId = null) {
         // Find the parent folder or use root
         let parentChildren;
-        
+
         if (parentId === null) {
             // Root level
             parentChildren = tree;
@@ -1341,10 +1422,10 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
             };
             parentChildren = findParent(tree) || [];
         }
-        
+
         // Check if name exists (excluding the item being renamed)
-        return parentChildren.some(child => 
-            child.name.toLowerCase() === name.toLowerCase() && 
+        return parentChildren.some(child =>
+            child.name.toLowerCase() === name.toLowerCase() &&
             child.id !== excludeId
         );
     }
@@ -1356,7 +1437,7 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
         // Get the parent ID
         const parent = getParent(item, tree);
         const parentId = parent?.id || null;
-        
+
         // Check if new name already exists (excluding current item)
         if (checkNameExists(newName, parentId, tree, item.id)) {
             const itemType = item.children ? 'folder' : 'file';
@@ -1366,12 +1447,12 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
 
         // Store current expanded paths before rename
         const currentExpandedPaths = [...expandedPaths];
-        
+
         const success = await updateFileItem(item.id, { name: newName });
         if (success) {
             // Reload tree but preserve expanded state
             await loadUserFileTree(user.id, false); // false = not initial load
-            
+
             // Update any expanded paths that reference the renamed item
             if (item.children) {
                 const oldPath = getItemPath(item, tree);
@@ -1391,7 +1472,7 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
                     setExpandedPaths(updatedPaths);
                 }
             }
-            
+
         } else {
             toast.error('Failed to rename. Please try again.');
         }
@@ -1402,7 +1483,7 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
         if (!user || !item.id) return;
 
         let success = false;
-        
+
         if (item.children) {
             // It's a folder - use recursive deletion
             success = await deleteFolderRecursively(item.id);
@@ -1410,19 +1491,19 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
             // It's a file - use simple deletion
             success = await deleteFileItem(item.id);
         }
-        
+
         if (success) {
             // Clean up expanded paths for deleted items
             const itemPath = getItemPath(item, tree);
             if (itemPath) {
-                setExpandedPaths(prev => 
+                setExpandedPaths(prev =>
                     prev.filter(path => !path.startsWith(itemPath))
                 );
             }
-            
+
             // Reload tree but preserve remaining expanded state
             await loadUserFileTree(user.id, false); // false = not initial load
-            
+
             // Clear selection if deleted item was selected
             if (selectedFile?.id === item.id) {
                 setSelectedFile(null);
@@ -1430,12 +1511,220 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
             if (selectedFolder?.id === item.id) {
                 setSelectedFolder(null);
             }
-            
+
             const itemType = item.children ? 'Folder' : 'File';
             toast.success(`${itemType} "${item.name}" deleted successfully.`);
         } else {
             toast.error('Failed to delete. Please try again.');
         }
+    };
+
+    // Add clipboard operations
+    const handleCopy = (item) => {
+        setClipboard({
+            item: item,
+            operation: 'copy'
+        });
+        setContextMenu(null);
+        toast.success(`${item.children ? 'Folder' : 'File'} copied to clipboard`);
+    };
+
+    const handleCut = (item) => {
+        setClipboard({
+            item: item,
+            operation: 'cut'
+        });
+        setContextMenu(null);
+        toast.success(`${item.children ? 'Folder' : 'File'} cut to clipboard`);
+    };
+
+    const handlePaste = async (targetItem) => {
+        if (!clipboard || !user) return;
+
+        const targetParentId = targetItem?.children ? targetItem.id : (targetItem ? getParent(targetItem, tree)?.id : null);
+        const { item: sourceItem, operation } = clipboard;
+
+        // Check if pasting into the same location
+        const sourceParent = getParent(sourceItem, tree);
+        const sourceParentId = sourceParent?.id || null;
+
+        if (sourceParentId === targetParentId && operation === 'cut') {
+            toast.error('Cannot move item to the same location');
+            return;
+        }
+
+        // Check if trying to move/copy a folder into itself or its children
+        if (sourceItem.children && targetItem) {
+            const isDescendant = (node, ancestor) => {
+                if (node === ancestor) return true;
+                const parent = getParent(node, tree);
+                return parent ? isDescendant(parent, ancestor) : false;
+            };
+
+            if (isDescendant(targetItem, sourceItem)) {
+                toast.error('Cannot move/copy a folder into itself or its children');
+                return;
+            }
+        }
+
+        // Helper function to find existing item by name in target location
+        const findExistingItem = (name, parentId, tree) => {
+            let parentChildren;
+
+            if (parentId === null) {
+                // Root level
+                parentChildren = tree;
+            } else {
+                // Find parent folder
+                const findParent = (items) => {
+                    for (const item of items) {
+                        if (item.id === parentId) {
+                            return item.children || [];
+                        }
+                        if (item.children) {
+                            const found = findParent(item.children);
+                            if (found) return found;
+                        }
+                    }
+                    return [];
+                };
+                parentChildren = findParent(tree);
+            }
+
+            return parentChildren.find(child =>
+                child.name.toLowerCase() === name.toLowerCase()
+            );
+        };
+
+        // Generate a unique name if there's a conflict
+        const generateUniqueName = (baseName, parentId, tree, suffix = 1) => {
+            const extension = baseName.includes('.') ? baseName.split('.').pop() : '';
+            const nameWithoutExt = extension ? baseName.replace(`.${extension}`, '') : baseName;
+            const newName = extension ? `${nameWithoutExt} (${suffix}).${extension}` : `${nameWithoutExt} (${suffix})`;
+
+            if (checkNameExists(newName, parentId, tree)) {
+                return generateUniqueName(baseName, parentId, tree, suffix + 1);
+            }
+            return newName;
+        };
+
+        // Check for name conflicts
+        if (checkNameExists(sourceItem.name, targetParentId, tree, operation === 'cut' ? sourceItem.id : null)) {
+            const itemType = sourceItem.children ? 'folder' : 'file';
+
+            setConflictDialog({
+                itemName: sourceItem.name,
+                conflictType: itemType,
+                onReplace: async () => {
+                    // Find and delete the existing item
+                    const existingItem = findExistingItem(sourceItem.name, targetParentId, tree);
+
+                    if (existingItem) {
+                        console.log('Found existing item to replace:', existingItem);
+
+                        // IMPORTANT: Close any tabs that reference the item being replaced
+                        if (existingItem.type === 'file' && window.closeTabsForFile) {
+                            window.closeTabsForFile(existingItem.id);
+                        }
+
+                        // Delete the existing item first
+                        let deleteSuccess = false;
+                        if (existingItem.children) {
+                            deleteSuccess = await deleteFolderRecursively(existingItem.id);
+                        } else {
+                            deleteSuccess = await deleteFileItem(existingItem.id);
+                        }
+
+                        if (!deleteSuccess) {
+                            toast.error('Failed to replace existing item');
+                            setConflictDialog(null);
+                            return;
+                        }
+
+                        // Wait a bit for the deletion to complete
+                        await new Promise(resolve => setTimeout(resolve, 200));
+                    }
+
+                    // Then proceed with the paste operation
+                    await performPasteOperation(sourceItem, targetParentId, operation, sourceItem.name);
+                    setConflictDialog(null);
+                },
+                onRename: async () => {
+                    const uniqueName = generateUniqueName(sourceItem.name, targetParentId, tree);
+                    await performPasteOperation(sourceItem, targetParentId, operation, uniqueName);
+                    setConflictDialog(null);
+                },
+                onCancel: () => {
+                    setConflictDialog(null);
+                }
+            });
+            return;
+        }
+
+        // No conflict, proceed with operation
+        await performPasteOperation(sourceItem, targetParentId, operation, sourceItem.name);
+    };
+
+    const performPasteOperation = async (sourceItem, targetParentId, operation, newName) => {
+        let success = false;
+
+        if (operation === 'copy') {
+            if (sourceItem.children) {
+                success = await copyFolderRecursively(user.id, sourceItem, targetParentId, newName);
+            } else {
+                success = await copyFileItem(user.id, sourceItem, targetParentId, newName);
+            }
+        } else if (operation === 'cut') {
+            // For cut, we need to rename if newName is different
+            if (newName !== sourceItem.name) {
+                await updateFileItem(sourceItem.id, { name: newName });
+            }
+            success = await moveFileItem(sourceItem.id, targetParentId);
+
+            // Clear clipboard after successful cut operation
+            if (success) {
+                setClipboard(null);
+            }
+        }
+
+        if (success) {
+            // Reload the tree and wait for it to complete
+            await loadUserFileTree(user.id, false);
+
+            const operationName = operation === 'copy' ? 'copied' : 'moved';
+            const itemType = sourceItem.children ? 'Folder' : 'File';
+            toast.success(`${itemType} ${operationName} successfully`);
+        } else {
+            toast.error(`Failed to ${operation} item. Please try again.`);
+        }
+
+        setContextMenu(null);
+    };
+
+    const handleEmptySpaceContextMenu = (e) => {
+        e.preventDefault();
+        const canPaste = clipboard !== null;
+
+        setContextMenu({
+            x: e.pageX,
+            y: e.pageY,
+            item: null,
+            onAddFile: () => {
+                setPendingAdd({ parent: null, type: 'file', input: '' });
+                setContextMenu(null);
+            },
+            onAddFolder: () => {
+                setPendingAdd({ parent: null, type: 'folder', input: '' });
+                setContextMenu(null);
+            },
+            onPaste: canPaste ? () => handlePaste(null) : undefined,
+            canPaste: canPaste,
+            clipboard: clipboard,
+            onRename: undefined,
+            onDelete: undefined,
+            onCopy: undefined,
+            onCut: undefined
+        });
     };
 
     const initials = (user?.user_metadata?.full_name || user?.user_metadata?.username || 'Unknown User')
@@ -1476,22 +1765,22 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
             <div className="flex items-center justify-between p-2 border-b border-border">
                 <span className="text-xs text-muted-foreground uppercase">Explorer</span>
                 <div className="flex gap-3">
-                    <button 
-                        onClick={() => setPendingAdd({ 
-                            parent: getCurrentParentFolder(), 
-                            type: 'file', 
-                            input: '' 
+                    <button
+                        onClick={() => setPendingAdd({
+                            parent: getCurrentParentFolder(),
+                            type: 'file',
+                            input: ''
                         })}
                         className="hover:bg-muted p-1 rounded"
                         title="Add File"
                     >
                         <FilePlus className="w-4 h-4 text-muted-foreground" />
                     </button>
-                    <button 
-                        onClick={() => setPendingAdd({ 
-                            parent: getCurrentParentFolder(), 
-                            type: 'folder', 
-                            input: '' 
+                    <button
+                        onClick={() => setPendingAdd({
+                            parent: getCurrentParentFolder(),
+                            type: 'folder',
+                            input: ''
                         })}
                         className="hover:bg-muted p-1 rounded"
                         title="Add Folder"
@@ -1501,9 +1790,9 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
                 </div>
             </div>
 
-            <Breadcrumbs 
-                path={currentPath} 
-                onNavigate={navigateToPath} 
+            <Breadcrumbs
+                path={currentPath}
+                onNavigate={navigateToPath}
                 selectedFile={selectedFile}
             />
 
@@ -1514,6 +1803,7 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
                         handleSelection(null, null);
                     }
                 }}
+                onContextMenu={handleEmptySpaceContextMenu}
             >
                 {/* Show root-level input at the top if adding to root */}
                 {pendingAdd && pendingAdd.parent === null && (
@@ -1559,21 +1849,16 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
                         renameItem={renameItem}
                         deleteItem={deleteItem}
                         contextMenuOpenFor={contextMenu?.item}
+                        clipboard={clipboard}
+                        onCopy={handleCopy}
+                        onCut={handleCut}
+                        onPaste={handlePaste}
                     />
                 ))}
             </div>
 
-            {/* Updated Account Section */}
+            {/* Updated Account Section - already includes Settings */}
             <AccountSection user={user} onLogout={handleLogout} />
-
-            {/* Settings Link */}
-            <Link
-                href="/settings"
-                className="hover:opacity-80 border-t border-border px-4 py-3 text-sm flex justify-between items-center"
-            >
-                Settings
-                <Settings className="w-4 h-4 text-muted-foreground" />
-            </Link>
 
             {contextMenu && (
                 <ContextMenu
@@ -1584,7 +1869,23 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
                     onDelete={contextMenu.onDelete}
                     onAddFile={contextMenu.onAddFile}
                     onAddFolder={contextMenu.onAddFolder}
+                    onCopy={contextMenu.onCopy}
+                    onCut={contextMenu.onCut}
+                    onPaste={contextMenu.onPaste}
+                    canPaste={contextMenu.canPaste}
+                    clipboard={contextMenu.clipboard}
                     onClose={() => setContextMenu(null)}
+                />
+            )}
+
+            {conflictDialog && (
+                <ConflictDialog
+                    isOpen={true}
+                    conflictType={conflictDialog.conflictType}
+                    itemName={conflictDialog.itemName}
+                    onReplace={conflictDialog.onReplace}
+                    onRename={conflictDialog.onRename}
+                    onCancel={conflictDialog.onCancel}
                 />
             )}
         </aside>
@@ -1625,6 +1926,11 @@ async function deleteFolderRecursively(itemId) {
     // Delete children first (recursively for folders)
     if (children && children.length > 0) {
         for (const child of children) {
+            // Close tabs for files being deleted
+            if (child.type === 'file' && window.closeTabsForFile) {
+                window.closeTabsForFile(child.id);
+            }
+            
             if (child.type === 'folder') {
                 await deleteFolderRecursively(child.id);
             } else {
@@ -1651,15 +1957,208 @@ async function deleteFolderRecursively(itemId) {
 function getItemPath(item, tree, currentPath = '') {
     for (const node of tree) {
         const nodePath = currentPath + '/' + node.name;
-        
+
         if (node === item) {
             return nodePath;
         }
-        
+
         if (node.children) {
             const found = getItemPath(item, node.children, nodePath);
             if (found) return found;
         }
     }
     return null;
+}
+
+// Conflict Dialog Component
+function ConflictDialog({ isOpen, conflictType, itemName, onReplace, onRename, onCancel }) {
+    const dialogRef = useRef(null);
+
+    useEffect(() => {
+        if (isOpen) {
+            const handleEscape = (e) => {
+                if (e.key === 'Escape') {
+                    onCancel();
+                }
+            };
+
+            document.addEventListener('keydown', handleEscape);
+            return () => document.removeEventListener('keydown', handleEscape);
+        }
+    }, [isOpen, onCancel]);
+
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+            <div
+                ref={dialogRef}
+                className="bg-background border border-border rounded-md p-6 max-w-md w-full"
+            >
+                <h3 className="text-lg font-semibold mb-2">Conflict Detected</h3>
+                <p className="text-muted-foreground mb-4">
+                    A {conflictType} named "{itemName}" already exists in this location.
+                </p>
+                <div className="flex gap-3">
+                    <button
+                        onClick={onReplace}
+                        className="px-4 py-2 text-sm bg-muted text-destructive-foreground rounded-md hover:bg-destructive/90 transition-colors"
+                    >
+                        Replace
+                    </button>
+                    <button
+                        onClick={onRename}
+                        className="px-4 py-2 text-sm border border-border rounded-md hover:bg-muted transition-colors"
+                    >
+                        Rename
+                    </button>
+                    <button
+                        onClick={onCancel}
+                        className="px-4 py-2 text-sm border border-border rounded-md hover:bg-muted transition-colors"
+                    >
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// Add clipboard operations helper functions
+async function copyFileItem(userId, sourceItem, targetParentId, newName = null) {
+    const name = newName || sourceItem.name;
+
+    // Generate new path
+    let path = name;
+    if (targetParentId) {
+        const { data: parent } = await supabase
+            .from('file_tree')
+            .select('path')
+            .eq('id', targetParentId)
+            .single();
+
+        if (parent) {
+            path = `${parent.path}/${name}`;
+        }
+    }
+
+    // Create new file/folder record
+    const { data, error } = await supabase
+        .from('file_tree')
+        .insert({
+            user_id: userId,
+            name,
+            type: sourceItem.type,
+            parent_id: targetParentId,
+            path,
+            created_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+
+    if (error) {
+        console.error('Error copying file item:', error);
+        return null;
+    }
+
+    // If it's a file, copy content
+    if (sourceItem.type === 'file') {
+        const { data: originalContent } = await supabase
+            .from('file_contents')
+            .select('content')
+            .eq('file_id', sourceItem.id)
+            .single();
+
+        const { error: contentError } = await supabase
+            .from('file_contents')
+            .insert({
+                file_id: data.id,
+                content: originalContent?.content || '',
+                version: 1
+            });
+
+        if (contentError) {
+            console.error('Error copying file content:', contentError);
+            await supabase.from('file_tree').delete().eq('id', data.id);
+            return null;
+        }
+    }
+
+    return data;
+}
+
+async function moveFileItem(itemId, targetParentId) {
+    const { data: item, error: fetchError } = await supabase
+        .from('file_tree')
+        .select('*')
+        .eq('id', itemId)
+        .single();
+
+    if (fetchError) {
+        console.error('Error fetching item for move:', fetchError);
+        return null;
+    }
+
+    let newPath = item.name;
+    if (targetParentId) {
+        const { data: parent } = await supabase
+            .from('file_tree')
+            .select('path')
+            .eq('id', targetParentId)
+            .single();
+
+        if (parent) {
+            newPath = `${parent.path}/${item.name}`;
+        }
+    }
+
+    const { data, error } = await supabase
+        .from('file_tree')
+        .update({
+            parent_id: targetParentId,
+            path: newPath,
+            updated_at: new Date().toISOString()
+        })
+        .eq('id', itemId)
+        .select()
+        .single();
+
+    if (error) {
+        console.error('Error moving item:', error);
+        return null;
+    }
+
+    if (item.type === 'folder') {
+        await updateChildrenPaths(itemId, newPath);
+    }
+
+    return data;
+}
+
+async function copyFolderRecursively(userId, sourceFolder, targetParentId, newName = null) {
+    const copiedFolder = await copyFileItem(userId, sourceFolder, targetParentId, newName);
+    if (!copiedFolder) return null;
+
+    const { data: children, error } = await supabase
+        .from('file_tree')
+        .select('*')
+        .eq('parent_id', sourceFolder.id)
+        .order('created_at', { ascending: false });
+
+    if (error) {
+        console.error('Error getting folder children for copy:', error);
+        return copiedFolder;
+    }
+
+    if (children && children.length > 0) {
+        for (const child of children) {
+            if (child.type === 'folder') {
+                await copyFolderRecursively(userId, child, copiedFolder.id);
+            } else {
+                await copyFileItem(userId, child, copiedFolder.id);
+            }
+        }
+    }
+
+    return copiedFolder;
 }

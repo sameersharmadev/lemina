@@ -1,10 +1,12 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { X, Edit, FileText, Trash2 } from 'lucide-react';
+import { X, Edit, FileText, Trash2, User, Settings } from 'lucide-react';
 import MarkdownEditor from './MarkdownEditor';
 import { createClient } from '@supabase/supabase-js';
 import { toast } from 'sonner';
+import AccountPage from '../app/account/Account';
+import SettingsPage from '../app/settings/Settings'; // Add this import
 
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -36,14 +38,38 @@ export default function TabSystem({
     const handleDragStart = (e, index) => {
         setDraggedTab(index);
         e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('text/html', e.target.outerHTML);
+        e.dataTransfer.setData('text/plain', ''); // Required for some browsers
+        
+        // Create a custom drag image (optional)
+        const dragImage = e.target.cloneNode(true);
+        dragImage.style.opacity = '0.8';
+        dragImage.style.transform = 'rotate(5deg)';
+        e.dataTransfer.setDragImage(dragImage, 0, 0);
     };
 
     // Handle drag over
     const handleDragOver = (e, index) => {
         e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        
         if (draggedTab !== null && draggedTab !== index) {
             setDragOverIndex(index);
+        }
+    };
+
+    // Handle drag enter
+    const handleDragEnter = (e, index) => {
+        e.preventDefault();
+        if (draggedTab !== null && draggedTab !== index) {
+            setDragOverIndex(index);
+        }
+    };
+
+    // Handle drag leave
+    const handleDragLeave = (e) => {
+        // Only clear drag over if we're leaving the tab area entirely
+        if (!e.currentTarget.contains(e.relatedTarget)) {
+            setDragOverIndex(null);
         }
     };
 
@@ -87,12 +113,15 @@ export default function TabSystem({
             // Double click - start renaming
             clearTimeout(clickTimeout);
             setClickCount(0);
-            startRename(tab);
+            if (!tab.isSpecial) { // Don't allow renaming special tabs
+                startRename(tab);
+            }
         }
     };
 
     // Start renaming a tab
     const startRename = (tab) => {
+        if (tab.isSpecial) return; // Prevent renaming special tabs
         setRenamingTabId(tab.id);
         setRenameValue(tab.name);
         setContextMenu(null);
@@ -132,6 +161,11 @@ export default function TabSystem({
 
         setRenamingTabId(null);
         setRenameValue('');
+    };
+
+    // Fix the submitRename function reference
+    const submitRename = () => {
+        handleRenameSubmit();
     };
 
     // Cancel rename
@@ -187,15 +221,20 @@ export default function TabSystem({
             }}
             onClick={(e) => e.stopPropagation()}
         >
-            <button
-                onClick={() => {
-                    startRename(menu.tab);
-                }}
-                className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-muted transition-colors text-left"
-            >
-                <Edit className="w-3 h-3" />
-                Rename
-            </button>
+            {!menu.tab.isSpecial && (
+                <>
+                    <button
+                        onClick={() => {
+                            startRename(menu.tab);
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-muted transition-colors text-left"
+                    >
+                        <Edit className="w-3 h-3" />
+                        Rename
+                    </button>
+                    <div className="border-t border-border my-1" />
+                </>
+            )}
             <button
                 onClick={() => {
                     onTabClose(menu.tab.id);
@@ -236,39 +275,68 @@ export default function TabSystem({
 
     const activeTab = tabs.find(tab => tab.id === activeTabId);
 
+    // Function to render special tab content
+    const renderSpecialTabContent = (tab) => {
+        switch (tab.type) {
+            case 'account':
+                return <AccountPage />;
+            case 'settings':
+                return <SettingsPage />; // Update this line
+            default:
+                return <div className="p-8">Unknown special tab</div>;
+        }
+    };
+
     return (
         <div className="flex flex-col h-full">
             {/* Tab Bar */}
-            <div className="flex items-center border-b border-border bg-background min-h-[40px] overflow-x-auto">
-                <div 
-                    ref={tabsRef}
-                    className="flex flex-1 min-w-0"
-                >
+            <div className="flex-shrink-0 border-b border-border">
+                <div className="flex overflow-x-auto" ref={tabsRef}>
                     {tabs.map((tab, index) => (
                         <div
                             key={tab.id}
-                            draggable={renamingTabId !== tab.id}
+                            draggable
                             onDragStart={(e) => handleDragStart(e, index)}
                             onDragOver={(e) => handleDragOver(e, index)}
+                            onDragEnter={(e) => handleDragEnter(e, index)}
+                            onDragLeave={handleDragLeave}
                             onDrop={(e) => handleDrop(e, index)}
                             onDragEnd={handleDragEnd}
-                            onContextMenu={(e) => handleContextMenu(e, tab)}
                             className={`
-                                group flex items-center gap-2 px-3 py-2 border-r border-border cursor-pointer
-                                min-w-[120px] max-w-[200px] relative
-                                ${tab.id === activeTabId 
-                                    ? 'bg-muted font-semibold' 
-                                    : 'bg-muted/30 hover:bg-muted/50'
+                                group flex items-center gap-2 px-4 py-2 border-r border-border cursor-pointer
+                                min-w-0 max-w-xs relative transition-all duration-200
+                                ${activeTabId === tab.id 
+                                    ? 'bg-background text-foreground' 
+                                    : 'bg-muted/30 text-muted-foreground hover:bg-muted/50'
                                 }
-                                ${dragOverIndex === index ? 'border-l-2 border-l-primary' : ''}
-                                ${draggedTab === index ? 'opacity-50' : ''}
+                                ${draggedTab === index ? 'opacity-50 scale-95' : ''}
+                                ${dragOverIndex === index && draggedTab !== index 
+                                    ? 'border-l-2 border-primary bg-primary/10' 
+                                    : ''
+                                }
                             `}
-                            onClick={(e) => {
-                                if (renamingTabId !== tab.id) {
-                                    handleTabClick(tab, e);
-                                }
-                            }}
+                            onClick={(e) => handleTabClick(tab, e)}
+                            onContextMenu={(e) => handleContextMenu(e, tab)}
                         >
+                            {/* Drag indicator */}
+                            {dragOverIndex === index && draggedTab !== index && (
+                                <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-primary z-10" />
+                            )}
+
+                            {/* Tab Icon - different for special tabs */}
+                            {tab.isSpecial ? (
+                                tab.type === 'account' ? (
+                                    <User className="w-4 h-4 flex-shrink-0" />
+                                ) : tab.type === 'settings' ? (
+                                    <Settings className="w-4 h-4 flex-shrink-0" />
+                                ) : (
+                                    <FileText className="w-4 h-4 flex-shrink-0" />
+                                )
+                            ) : (
+                                <FileText className="w-4 h-4 flex-shrink-0" />
+                            )}
+
+                            {/* Tab Name */}
                             {renamingTabId === tab.id ? (
                                 <input
                                     ref={renameInputRef}
@@ -277,48 +345,37 @@ export default function TabSystem({
                                     onChange={(e) => setRenameValue(e.target.value)}
                                     onKeyDown={(e) => {
                                         if (e.key === 'Enter') {
-                                            e.preventDefault();
-                                            handleRenameSubmit();
+                                            submitRename();
                                         } else if (e.key === 'Escape') {
-                                            e.preventDefault();
                                             cancelRename();
                                         }
+                                        e.stopPropagation();
                                     }}
-                                    onBlur={handleRenameSubmit}
+                                    onBlur={submitRename}
+                                    className="bg-transparent border-none outline-none text-sm min-w-0 flex-1"
                                     onClick={(e) => e.stopPropagation()}
-                                    className="bg-transparent border-none outline-none focus:outline-none text-sm truncate px-0 py-0 select-all w-20 min-w-16 max-w-24"
-                                    style={{
-                                        fontSize: '0.875rem !important',
-                                        fontFamily: 'inherit',
-                                        fontWeight: 'inherit',
-                                        color: 'inherit',
-                                        lineHeight: '1.25rem'
-                                    }}
+                                    onDragStart={(e) => e.preventDefault()} // Prevent dragging while renaming
                                 />
                             ) : (
-                                <span className="truncate flex-1 text-sm select-none">
+                                <span 
+                                    className="truncate text-sm min-w-0 flex-1 select-none"
+                                    onDoubleClick={() => !tab.isSpecial && startRename(tab)} // Prevent renaming special tabs
+                                >
                                     {tab.name}
                                 </span>
                             )}
-                            
-                            {/* Close button */}
-                            {renamingTabId !== tab.id && (
-                                <button
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        onTabClose(tab.id);
-                                    }}
-                                    className={`
-                                        w-4 h-4 rounded hover:bg-destructive/20 flex items-center justify-center transition-opacity
-                                        ${tab.id === activeTabId 
-                                            ? 'opacity-100' 
-                                            : 'opacity-0 group-hover:opacity-100'
-                                        }
-                                    `}
-                                >
-                                    <X className="w-3 h-3" />
-                                </button>
-                            )}
+
+                            {/* Close Button */}
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onTabClose(tab.id);
+                                }}
+                                onDragStart={(e) => e.preventDefault()} // Prevent dragging the close button
+                                className="opacity-0 group-hover:opacity-100 hover:bg-muted/80 rounded p-1 transition-all flex-shrink-0 z-10"
+                            >
+                                <X className="w-3 h-3" />
+                            </button>
                         </div>
                     ))}
                 </div>
@@ -330,12 +387,18 @@ export default function TabSystem({
             {/* Editor Area */}
             <div className="flex-1 min-h-0">
                 {activeTab ? (
-                    <MarkdownEditor
-                        key={activeTab.id}
-                        fileId={activeTab.id}
-                        fileName={activeTab.name}
-                        user={user}
-                    />
+                    activeTab.isSpecial ? (
+                        // Render special tab content
+                        renderSpecialTabContent(activeTab)
+                    ) : (
+                        // Render normal file editor
+                        <MarkdownEditor
+                            key={activeTab.id}
+                            fileId={activeTab.id}
+                            fileName={activeTab.name}
+                            user={user}
+                        />
+                    )
                 ) : (
                     <div className="flex items-center justify-center h-full text-muted-foreground">
                         <div className="text-center">

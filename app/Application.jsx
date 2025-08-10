@@ -84,10 +84,20 @@ export default function Application() {
             console.log('Saving tabs for user:', user.id);
 
             if (tabsToSave && tabsToSave.length > 0) {
-                const validTabs = tabsToSave.filter(tab => tab && tab.id);
+                // Filter out special tabs since they shouldn't be persisted to database
+                const validTabs = tabsToSave.filter(tab => tab && tab.id && !tab.isSpecial);
                 
                 if (validTabs.length === 0) {
-                    console.log('No valid tabs to save');
+                    console.log('No valid file tabs to save (only special tabs)');
+                    // Still clear existing tabs since user might have closed all file tabs
+                    const { error: deleteError } = await supabase
+                        .from('user_tabs')
+                        .delete()
+                        .eq('user_id', user.id);
+                
+                    if (deleteError) {
+                        console.error('Error clearing tabs:', deleteError);
+                    }
                     return;
                 }
 
@@ -102,12 +112,16 @@ export default function Application() {
                     return;
                 }
 
+                // Only save file tabs, not special tabs
+                // Also check if activeId is a special tab
+                const activeFileId = activeId && !tabsToSave.find(tab => tab.id === activeId)?.isSpecial ? activeId : null;
+
                 // Then insert new tabs
                 const tabsData = validTabs.map((tab, index) => ({
                     user_id: user.id,
                     file_id: tab.id,
                     tab_order: index,
-                    is_active: activeId ? tab.id === activeId : index === 0
+                    is_active: activeFileId ? tab.id === activeFileId : index === 0
                 }));
 
                 console.log('Inserting tabs:', tabsData);
@@ -129,7 +143,7 @@ export default function Application() {
                     .from('user_tabs')
                     .delete()
                     .eq('user_id', user.id);
-                
+            
                 if (deleteError) {
                     console.error('Error clearing tabs:', deleteError);
                 }
@@ -325,6 +339,69 @@ export default function Application() {
         // Trigger file system refresh for sidebar
         triggerFileSystemRefresh();
     }, [activeTabId, debouncedSaveUserTabs, triggerFileSystemRefresh]);
+
+    // In Application.jsx, fix the closeTabsForFile function
+    const closeTabsForFile = useCallback((fileId) => {
+        setOpenTabs(prevTabs => {
+            const updatedTabs = prevTabs.filter(tab => tab.id !== fileId);
+            
+            // If the active tab was closed, switch to another tab or clear selection
+            if (activeTabId === fileId) {
+                if (updatedTabs.length > 0) {
+                    setActiveTabId(updatedTabs[0].id);
+                } else {
+                    setActiveTabId(null);
+                }
+            }
+            
+            return updatedTabs;
+        });
+    }, [activeTabId]);
+
+    // Make the function available globally for the Sidebar to use
+    useEffect(() => {
+        window.closeTabsForFile = closeTabsForFile;
+        
+        return () => {
+            delete window.closeTabsForFile;
+        };
+    }, [closeTabsForFile]);
+
+    // Add function to open special tabs (account, settings, etc.)
+    const openSpecialTab = useCallback((specialTab) => {
+        setOpenTabs(prevTabs => {
+            // Check if special tab is already open
+            const existingTab = prevTabs.find(tab => tab.id === specialTab.id);
+            
+            if (existingTab) {
+                // Just switch to existing tab
+                setActiveTabId(specialTab.id);
+                return prevTabs;
+            } else {
+                // Create new special tab
+                const newTab = {
+                    id: specialTab.id,
+                    name: specialTab.name,
+                    type: specialTab.type, // 'account', 'settings', etc.
+                    path: specialTab.path,
+                    isSpecial: true // Flag to identify special tabs
+                };
+
+                const newTabs = [...prevTabs, newTab];
+                setActiveTabId(specialTab.id);
+                return newTabs;
+            }
+        });
+    }, []);
+
+    // Make the function available globally
+    useEffect(() => {
+        window.openSpecialTab = openSpecialTab;
+        
+        return () => {
+            delete window.openSpecialTab;
+        };
+    }, [openSpecialTab]);
 
     // Initialize user and load tabs
     useEffect(() => {
