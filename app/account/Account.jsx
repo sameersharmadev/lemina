@@ -25,7 +25,7 @@ import {
     TrendingUp,
     GitCommit
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { useCustomToast } from '../../lib/useCustomToast';
 import Link from 'next/link';
 
 const supabase = createClient(
@@ -35,6 +35,7 @@ const supabase = createClient(
 
 export default function AccountPage() {
     const router = useRouter();
+    const customToast = useCustomToast();
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -104,7 +105,7 @@ export default function AccountPage() {
                 }
             } catch (error) {
                 console.error('Error fetching user data:', error);
-                toast.error('Failed to load account data');
+                customToast.error('Failed to load account data');
             } finally {
                 setLoading(false);
             }
@@ -236,14 +237,17 @@ export default function AccountPage() {
             });
 
             if (error) {
-                toast.error('Failed to update profile');
+                customToast.error('Failed to update profile');
                 console.error('Error updating user:', error);
             } else {
-                toast.success('Profile updated successfully');
+                customToast.success('Profile updated successfully');
+                // Re-fetch user data to reflect changes
+                const { data: { user: updatedUser } } = await supabase.auth.getUser();
+                setUser(updatedUser);
             }
         } catch (error) {
             console.error('Unexpected error:', error);
-            toast.error('An unexpected error occurred');
+            customToast.error('An unexpected error occurred');
         } finally {
             setSaving(false);
         }
@@ -251,35 +255,32 @@ export default function AccountPage() {
 
     const handleEmailChange = async () => {
         if (!newEmail || newEmail === formData.email) {
-            toast.error('Please enter a different email address');
+            customToast.error('Please enter a different email address');
             return;
         }
 
         // Basic email validation
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailRegex.test(newEmail)) {
-            toast.error('Please enter a valid email address');
+            customToast.error('Please enter a valid email address');
             return;
         }
 
         setEmailChanging(true);
         try {
-            const { error } = await supabase.auth.updateUser({
-                email: newEmail
-            });
-
+            const { error } = await supabase.auth.updateUser({ email: newEmail });
             if (error) {
-                toast.error('Failed to update email: ' + error.message);
-                console.error('Error updating email:', error);
+                console.error('Error changing email:', error);
+                customToast.error('Failed to change email');
             } else {
-                toast.success('Email update initiated! Please check your new email for confirmation.');
+                customToast.success('Email change initiated. Please check your inbox to confirm.');
                 setShowEmailChange(false);
                 setNewEmail('');
                 // Note: The email won't actually change in the UI until the user confirms via email
             }
         } catch (error) {
             console.error('Unexpected error:', error);
-            toast.error('An unexpected error occurred');
+            customToast.error('An unexpected error occurred');
         } finally {
             setEmailChanging(false);
         }
@@ -294,14 +295,14 @@ export default function AccountPage() {
         try {
             const { error } = await supabase.auth.signOut();
             if (error) {
-                toast.error('Failed to logout');
+                customToast.error('Failed to logout');
             } else {
-                toast.success('Logged out successfully');
+                customToast.success('Logged out successfully');
                 router.push('/login');
             }
         } catch (error) {
             console.error('Logout error:', error);
-            toast.error('An error occurred during logout');
+            customToast.error('An error occurred during logout');
         }
     };
 

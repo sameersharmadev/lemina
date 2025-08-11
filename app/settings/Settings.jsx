@@ -1,7 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -28,143 +27,27 @@ import {
     Type,
     Calendar
 } from 'lucide-react';
-import { toast } from 'sonner';
-
-const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-);
+import { useSettings } from '../../lib/SettingsContext';
+import { useCustomToast } from '../../lib/useCustomToast';
+import { playSound } from '../../lib/sounds'; 
 
 export default function SettingsPage() {
-    const [user, setUser] = useState(null);
-    const [loading, setLoading] = useState(true);
+    const { settings, handleSettingChange, resetSettings, loading } = useSettings();
+    const showToast = useCustomToast();
     const [saving, setSaving] = useState(false);
-    
-    // Settings state
-    const [settings, setSettings] = useState({
-        // File Management
-        sortBy: 'creationDate', // 'creationDate', 'alphabetical', 'lastModified', 'fileType'
-        sortOrder: 'desc', // 'asc', 'desc'
-        foldersFirst: true,
-        showHiddenFiles: false,
-        autoExpandFolders: false,
-        
-        // Editor
-        autoSave: true,
-        autoSaveDelay: 2000, // milliseconds
-        tabSize: 4,
-        wordWrap: true,
-        lineNumbers: true,
-        
-        // UI Preferences
-        theme: 'system', // 'light', 'dark', 'system'
-        sidebarWidth: 280,
-        compactMode: false,
-        showBreadcrumbs: true,
-        showFileIcons: true,
-        
-        // Behavior
-        confirmDelete: true,
-        openFilesInNewTab: false,
-        closeTabsOnDelete: true,
-        restoreTabsOnStartup: true,
-        
-        // Notifications
-        showNotifications: true,
-        soundEnabled: false,
-        notificationDuration: 3000,
-    });
 
-    useEffect(() => {
-        const fetchUserAndSettings = async () => {
-            try {
-                const { data: { user }, error } = await supabase.auth.getUser();
-                
-                if (error || !user) {
-                    console.error('No user found');
-                    return;
-                }
-
-                setUser(user);
-                
-                // Load user settings from localStorage
-                const savedSettings = localStorage.getItem(`userSettings_${user.id}`);
-                if (savedSettings) {
-                    try {
-                        const parsedSettings = JSON.parse(savedSettings);
-                        setSettings(prev => ({ ...prev, ...parsedSettings }));
-                    } catch (e) {
-                        console.error('Error parsing saved settings:', e);
-                    }
-                }
-            } catch (error) {
-                console.error('Error fetching user:', error);
-                toast.error('Failed to load settings');
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchUserAndSettings();
-    }, []);
-
-    const handleSettingChange = (key, value) => {
-        setSettings(prev => ({
-            ...prev,
-            [key]: value
-        }));
-    };
-
-    const handleSave = async () => {
-        if (!user) return;
-
+    const handleSave = () => {
         setSaving(true);
-        try {
-            // Save to localStorage
-            localStorage.setItem(`userSettings_${user.id}`, JSON.stringify(settings));
-            
-            // Broadcast settings change to other components
-            window.dispatchEvent(new CustomEvent('settingsChanged', { 
-                detail: settings 
-            }));
-            
-            toast.success('Settings saved successfully');
-        } catch (error) {
-            console.error('Error saving settings:', error);
-            toast.error('Failed to save settings');
-        } finally {
+        // Settings are already saved on change, so we just show a toast.
+        setTimeout(() => {
+            showToast('success', 'Settings saved successfully');
             setSaving(false);
-        }
+        }, 500);
     };
 
-    const handleReset = () => {
-        const defaultSettings = {
-            sortBy: 'creationDate',
-            sortOrder: 'desc',
-            foldersFirst: true,
-            showHiddenFiles: false,
-            autoExpandFolders: false,
-            autoSave: true,
-            autoSaveDelay: 2000,
-            tabSize: 4,
-            wordWrap: true,
-            lineNumbers: true,
-            theme: 'system',
-            sidebarWidth: 280,
-            compactMode: false,
-            showBreadcrumbs: true,
-            showFileIcons: true,
-            confirmDelete: true,
-            openFilesInNewTab: false,
-            closeTabsOnDelete: true,
-            restoreTabsOnStartup: true,
-            showNotifications: true,
-            soundEnabled: false,
-            notificationDuration: 3000,
-        };
-        
-        setSettings(defaultSettings);
-        toast.success('Settings reset to defaults');
+    const handleResetClick = () => {
+        resetSettings();
+        showToast('success', 'Settings have been reset to default');
     };
 
     if (loading) {
@@ -179,8 +62,8 @@ export default function SettingsPage() {
         <div className="h-full bg-background overflow-y-auto">
             {/* Header */}
             <div className="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-                <div className="px-6 py-4">
-                    <div className="flex items-center justify-between">
+                <div className="px-8 py-4">
+                    <div className="flex items-center justify-between w-full max-w-none">
                         <div>
                             <h1 className="text-2xl font-semibold">Settings</h1>
                             <p className="text-sm text-muted-foreground">
@@ -189,7 +72,7 @@ export default function SettingsPage() {
                         </div>
                         <div className="flex gap-2">
                             <Button 
-                                onClick={handleReset}
+                                onClick={handleResetClick}
                                 variant="outline"
                                 className="gap-2"
                             >
@@ -213,9 +96,9 @@ export default function SettingsPage() {
                 </div>
             </div>
 
-            <div className="px-6 py-8 max-w-4xl mx-auto space-y-8">
+            <div className="px-8 py-8 w-full space-y-8">
                 {/* File Management */}
-                <Card>
+                <Card className="w-full">
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">
                             <FolderTree className="w-5 h-5" />
@@ -315,24 +198,13 @@ export default function SettingsPage() {
                                 />
                             </div>
 
-                            <div className="flex items-center justify-between">
-                                <div className="space-y-0.5">
-                                    <Label>Auto-expand folders</Label>
-                                    <p className="text-sm text-muted-foreground">
-                                        Automatically expand folders when navigating
-                                    </p>
-                                </div>
-                                <Switch
-                                    checked={settings.autoExpandFolders}
-                                    onCheckedChange={(checked) => handleSettingChange('autoExpandFolders', checked)}
-                                />
-                            </div>
+                            
                         </div>
                     </CardContent>
                 </Card>
 
                 {/* Editor Settings */}
-                <Card>
+                <Card className="w-full">
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">
                             <File className="w-5 h-5" />
@@ -377,18 +249,7 @@ export default function SettingsPage() {
                                 </div>
                             )}
 
-                            <div className="flex items-center justify-between">
-                                <div className="space-y-0.5">
-                                    <Label>Word wrap</Label>
-                                    <p className="text-sm text-muted-foreground">
-                                        Wrap long lines in the editor
-                                    </p>
-                                </div>
-                                <Switch
-                                    checked={settings.wordWrap}
-                                    onCheckedChange={(checked) => handleSettingChange('wordWrap', checked)}
-                                />
-                            </div>
+                            
 
                             <div className="flex items-center justify-between">
                                 <div className="space-y-0.5">
@@ -407,7 +268,7 @@ export default function SettingsPage() {
                 </Card>
 
                 {/* Appearance */}
-                <Card>
+                <Card className="w-full">
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">
                             <Palette className="w-5 h-5" />
@@ -450,18 +311,7 @@ export default function SettingsPage() {
                         <Separator />
 
                         <div className="space-y-4">
-                            <div className="flex items-center justify-between">
-                                <div className="space-y-0.5">
-                                    <Label>Compact mode</Label>
-                                    <p className="text-sm text-muted-foreground">
-                                        Reduce spacing for a more compact interface
-                                    </p>
-                                </div>
-                                <Switch
-                                    checked={settings.compactMode}
-                                    onCheckedChange={(checked) => handleSettingChange('compactMode', checked)}
-                                />
-                            </div>
+                            
 
                             <div className="flex items-center justify-between">
                                 <div className="space-y-0.5">
@@ -493,7 +343,7 @@ export default function SettingsPage() {
                 </Card>
 
                 {/* Behavior */}
-                <Card>
+                <Card className="w-full">
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">
                             <Layout className="w-5 h-5" />
@@ -518,31 +368,9 @@ export default function SettingsPage() {
                                 />
                             </div>
 
-                            <div className="flex items-center justify-between">
-                                <div className="space-y-0.5">
-                                    <Label>Open files in new tab</Label>
-                                    <p className="text-sm text-muted-foreground">
-                                        Always open files in a new tab instead of replacing current
-                                    </p>
-                                </div>
-                                <Switch
-                                    checked={settings.openFilesInNewTab}
-                                    onCheckedChange={(checked) => handleSettingChange('openFilesInNewTab', checked)}
-                                />
-                            </div>
+                            
 
-                            <div className="flex items-center justify-between">
-                                <div className="space-y-0.5">
-                                    <Label>Close tabs on delete</Label>
-                                    <p className="text-sm text-muted-foreground">
-                                        Automatically close tabs when files are deleted
-                                    </p>
-                                </div>
-                                <Switch
-                                    checked={settings.closeTabsOnDelete}
-                                    onCheckedChange={(checked) => handleSettingChange('closeTabsOnDelete', checked)}
-                                />
-                            </div>
+                            
 
                             <div className="flex items-center justify-between">
                                 <div className="space-y-0.5">
@@ -561,7 +389,7 @@ export default function SettingsPage() {
                 </Card>
 
                 {/* Notifications */}
-                <Card>
+                <Card className="w-full">
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">
                             <Eye className="w-5 h-5" />
@@ -595,7 +423,13 @@ export default function SettingsPage() {
                                 </div>
                                 <Switch
                                     checked={settings.soundEnabled}
-                                    onCheckedChange={(checked) => handleSettingChange('soundEnabled', checked)}
+                                    onCheckedChange={(checked) => {
+                                        handleSettingChange('soundEnabled', checked);
+                                        // Play sound on enable to test it
+                                        if (checked) {
+                                            playSound('notification');
+                                        }
+                                    }}
                                 />
                             </div>
 

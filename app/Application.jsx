@@ -5,6 +5,7 @@ import { createClient } from '@supabase/supabase-js';
 import Sidebar from "@/components/Sidebar";
 import TabSystem from "@/components/TabSystem";
 import { toast } from 'sonner';
+import { useSettings } from '../lib/SettingsContext'; // Import the settings hook
 
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -12,6 +13,7 @@ const supabase = createClient(
 );
 
 export default function Application() {
+    const { settings, loading: settingsLoading } = useSettings(); // Use the settings hook
     const [openTabs, setOpenTabs] = useState([]);
     const [activeTabId, setActiveTabId] = useState(null);
     const [user, setUser] = useState(null);
@@ -132,7 +134,9 @@ export default function Application() {
 
                 if (insertError) {
                     console.error('Error inserting tabs:', insertError);
-                    toast.error(`Failed to save tabs: ${insertError.message}`);
+                    if (settings.showNotifications) {
+                        toast.error(`Failed to save tabs: ${insertError.message}`);
+                    }
                     return;
                 }
 
@@ -150,7 +154,9 @@ export default function Application() {
             }
         } catch (err) {
             console.error('Unexpected error saving tabs:', err);
-            toast.error(`Unexpected error: ${err.message}`);
+            if (settings.showNotifications) {
+                toast.error(`Unexpected error: ${err.message}`);
+            }
         } finally {
             iseSavingRef.current = false;
         }
@@ -252,27 +258,29 @@ export default function Application() {
             triggerFileSystemRefresh();
             
         } else if (action === 'delete') {
-            // Close the tab if the file was deleted - use functional update
-            setOpenTabs(prevTabs => {
-                const tabToClose = prevTabs.find(tab => tab.id === updatedFile.id);
-                if (tabToClose) {
-                    const newTabs = prevTabs.filter(tab => tab.id !== updatedFile.id);
-                    
-                    // Handle active tab if the deleted file was active
-                    if (activeTabId === updatedFile.id) {
-                        const newActiveId = newTabs.length > 0 ? newTabs[newTabs.length - 1].id : null;
-                        setActiveTabId(newActiveId);
-                        debouncedSaveUserTabs(newTabs, newActiveId);
-                    } else {
-                        debouncedSaveUserTabs(newTabs, activeTabId);
+            if (settings.closeTabsOnDelete) {
+                // Close the tab if the file was deleted - use functional update
+                setOpenTabs(prevTabs => {
+                    const tabToClose = prevTabs.find(tab => tab.id === updatedFile.id);
+                    if (tabToClose) {
+                        const newTabs = prevTabs.filter(tab => tab.id !== updatedFile.id);
+                        
+                        // Handle active tab if the deleted file was active
+                        if (activeTabId === updatedFile.id) {
+                            const newActiveId = newTabs.length > 0 ? newTabs[newTabs.length - 1].id : null;
+                            setActiveTabId(newActiveId);
+                            debouncedSaveUserTabs(newTabs, newActiveId);
+                        } else {
+                            debouncedSaveUserTabs(newTabs, activeTabId);
+                        }
+                        
+                        return newTabs;
                     }
-                    
-                    return newTabs;
-                }
-                return prevTabs;
-            });
+                    return prevTabs;
+                });
+            }
         }
-    }, [activeTabId, debouncedSaveUserTabs, triggerFileSystemRefresh]); // Fixed dependencies
+    }, [activeTabId, debouncedSaveUserTabs, triggerFileSystemRefresh, settings.closeTabsOnDelete, settings.showNotifications]); // Fixed dependencies
 
     // Handle file selection from sidebar
     const handleFileSelect = useCallback(async (file) => {
@@ -408,13 +416,16 @@ export default function Application() {
         const fetchUser = async () => {
             const { data: { user } } = await supabase.auth.getUser();
             setUser(user);
-            if (user) {
+            if (user && !settingsLoading && settings.restoreTabsOnStartup) {
                 await loadUserTabs(user.id);
             }
             setLoading(false);
         };
-        fetchUser();
-    }, [loadUserTabs]);
+        
+        if (!settingsLoading) {
+            fetchUser();
+        }
+    }, [loadUserTabs, settingsLoading, settings.restoreTabsOnStartup]);
 
     // Cleanup timeout on unmount
     useEffect(() => {

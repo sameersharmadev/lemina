@@ -143,17 +143,16 @@ body {
     min-height: 100%;
     font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     line-height: 1.5; /* Reduced from 1.6 */
-    color: hsl(var(--foreground));
+    color: var(--foreground);
 }
 
 .editor-content .ProseMirror p.is-editor-empty:first-child::before {
     content: attr(data-placeholder);
     float: left;
-    color: hsl(var(--muted-foreground) / 0.4); 
+    color: var(--muted-foreground) / 0.4; 
     opacity: 0.5;
     pointer-events: none;
     height: 0;
-    font-style: italic; 
 }
 
 /* Text formatting */
@@ -173,7 +172,7 @@ body {
 }
 
 .editor-content .ProseMirror code {
-    background-color: hsl(var(--muted));
+    background-color: var(--muted);
     padding: 0.2em 0.4em;
     border-radius: 3px;
     font-family: "Monaco", "Menlo", "Ubuntu Mono", monospace;
@@ -308,7 +307,7 @@ body {
 .editor-content .ProseMirror .task-list .task-item[data-checked="true"] > div > p {
     text-decoration: line-through;
     opacity: 0.6;
-    color: hsl(var(--muted-foreground));
+    color: var(--muted-foreground);
 }
 
 /* Nested task lists */
@@ -365,7 +364,7 @@ body {
 
 /* Ensure checkbox styling is consistent */
 .editor-content .ProseMirror input[type="checkbox"] {
-    accent-color: hsl(var(--primary));
+    accent-color: var(--primary);
     width: 1rem;
     height: 1rem;
     margin: 0;
@@ -374,12 +373,12 @@ body {
 /* Dark mode checkbox adjustments */
 @media (prefers-color-scheme: dark) {
     .editor-content .ProseMirror .task-list .task-item[data-checked="true"] > div > p {
-        color: hsl(var(--muted-foreground));
+        color: var(--muted-foreground);
     }
 }
 
 .dark .editor-content .ProseMirror .task-list .task-item[data-checked="true"] > div > p {
-    color: hsl(var(--muted-foreground));
+    color: var(--muted-foreground);
 }
 
 /* Add this scrollbar styling after your existing styles */
@@ -541,4 +540,41 @@ html {
     /* Alternative hover state */
     /* background: #2d3748; */
     background: #4a5568;
+}
+
+/*
+* =================================================================
+* EDITOR LINE NUMBERS
+* =================================================================
+*/
+.editor-wrapper.show-line-numbers .ProseMirror {
+    /* Create space on the left for the line numbers */
+    padding-left: 3.5rem; 
+    counter-reset: line;
+}
+
+.editor-wrapper.show-line-numbers .ProseMirror > * {
+    position: relative;
+}
+
+.editor-wrapper.show-line-numbers .ProseMirror > *::before {
+    counter-increment: line;
+    content: counter(line);
+    
+    /* Positioning and styling for the line number */
+    position: absolute;
+    left: -3.5rem;
+    width: 3rem;
+    padding-right: 0.5rem;
+    text-align: right;
+    color: var(--muted-foreground);
+    font-family: var(--font-geist-mono);
+    font-size: 0.8125rem; /* 13px */
+    user-select: none;
+    cursor: default;
+}
+
+/* Ensure even an empty editor shows the first line number */
+.editor-wrapper.show-line-numbers .ProseMirror p.is-editor-empty:first-child::before {
+    content: '1';
 }

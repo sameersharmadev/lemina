@@ -30,6 +30,7 @@ import {
     CheckSquare,
     Highlighter
 } from 'lucide-react';
+import { useCustomToast } from '../lib/useCustomToast';
 
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -60,12 +61,13 @@ const ToolbarSeparator = () => (
     <div className="w-px h-6 bg-border mx-1" />
 );
 
-export default function MarkdownEditor({ fileId, fileName, user }) {
+export default function MarkdownEditor({ fileId, fileName, user, settings }) {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [lastSaved, setLastSaved] = useState(null);
     const [showLinkDialog, setShowLinkDialog] = useState(false);
     const [linkUrl, setLinkUrl] = useState('');
+    const showToast = useCustomToast();
     // Add state to force toolbar re-renders
     const [, setForceUpdate] = useState({});
     
@@ -92,13 +94,15 @@ export default function MarkdownEditor({ fileId, fileName, user }) {
 
         if (error) {
             console.error('Error saving content:', error);
-            toast.error('Failed to save file');
+            if (settings.showNotifications) {
+                showToast('error', 'Failed to save file');
+            }
         } else {
             setLastSaved(new Date());
         }
         
         setSaving(false);
-    }, [fileId, user]);
+    }, [fileId, user, settings.showNotifications]);
 
     // Auto-save with debounce
     const debouncedSave = useCallback((content) => {
@@ -108,8 +112,8 @@ export default function MarkdownEditor({ fileId, fileName, user }) {
         
         saveTimeoutRef.current = setTimeout(() => {
             saveContent(content);
-        }, 1000);
-    }, [saveContent]);
+        }, settings.autoSaveDelay);
+    }, [saveContent, settings.autoSaveDelay]);
 
     // Initialize Tiptap editor
     const editor = useEditor({
@@ -131,7 +135,7 @@ export default function MarkdownEditor({ fileId, fileName, user }) {
                 },
             }),
             Placeholder.configure({
-                placeholder: 'Start writing your thoughts...',
+                placeholder: 'Empty file',
             }),
             Typography,
             TaskList.configure({
@@ -216,8 +220,10 @@ export default function MarkdownEditor({ fileId, fileName, user }) {
             },
         },
         onUpdate: ({ editor }) => {
-            const content = editor.getHTML();
-            debouncedSave(content);
+            if (settings.autoSave) {
+                const content = editor.getHTML();
+                debouncedSave(content);
+            }
             // Force toolbar update on content change
             forceUpdate();
         },
@@ -258,14 +264,18 @@ export default function MarkdownEditor({ fileId, fileName, user }) {
 
             if (insertError) {
                 console.error('Error creating file content:', insertError);
-                toast.error('Failed to load file');
+                if (settings.showNotifications) {
+                    showToast('error', 'Failed to load file');
+                }
                 return;
             }
             
             contentData = newContent;
         } else if (error) {
             console.error('Error loading content:', error);
-            toast.error('Failed to load file');
+            if (settings.showNotifications) {
+                showToast('error', 'Failed to load file');
+            }
             return;
         }
 
@@ -275,7 +285,7 @@ export default function MarkdownEditor({ fileId, fileName, user }) {
         
         // Force toolbar update after loading content
         forceUpdate();
-    }, [fileId, user, editor, forceUpdate]);
+    }, [fileId, user, editor, forceUpdate, settings.showNotifications]);
 
     // Load content when file or editor changes
     useEffect(() => {
@@ -283,6 +293,24 @@ export default function MarkdownEditor({ fileId, fileName, user }) {
             loadContent();
         }
     }, [loadContent, editor]);
+
+    // Update editor options when settings change
+    useEffect(() => {
+        if (!editor) return;
+
+        editor.setOptions({
+            editorProps: {
+                attributes: {
+                    class: 'prose prose-sm sm:prose lg:prose-lg xl:prose-xl mx-auto focus:outline-none min-h-full p-6 max-w-none',
+                    spellcheck: 'false',
+                    autocorrect: 'off',
+                    autocapitalize: 'off',
+                    'data-gramm': 'false',
+                    style: `tab-size: ${settings.tabSize}; -webkit-tab-size: ${settings.tabSize}; -moz-tab-size: ${settings.tabSize}; ${!settings.wordWrap ? 'white-space: pre; overflow-x: auto;' : ''}`
+                }
+            }
+        });
+    }, [editor, settings.tabSize, settings.wordWrap]);
 
     // Cleanup timeout on unmount
     useEffect(() => {
@@ -357,12 +385,28 @@ export default function MarkdownEditor({ fileId, fileName, user }) {
             {/* Status bar */}
             <div className="flex justify-between items-center px-4 py-2 border-b border-border bg-muted/30 text-xs text-muted-foreground">
                 <span>{fileName}</span>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-row-reverse items-center gap-2">
                     {saving && (
                         <span className="flex items-center gap-1">
                             <Loader2 className="w-3 h-3 animate-spin" />
                             Saving...
                         </span>
+                    )}
+                    {!saving && (
+                         <button
+                            onClick={() => {
+                                if (saveTimeoutRef.current) {
+                                    clearTimeout(saveTimeoutRef.current);
+                                }
+                                if (editor) {
+                                    saveContent(editor.getHTML());
+                                }
+                            }}
+                            className="px-2 py-0.5 rounded-sm text-black text-md bg-white transition-colors"
+                            title="Save now (Ctrl+S)"
+                        >
+                            Save
+                        </button>
                     )}
                     {lastSaved && !saving && (
                         <span>
@@ -557,7 +601,7 @@ export default function MarkdownEditor({ fileId, fileName, user }) {
             </div>
 
             {/* Editor */}
-            <div className="flex-1 overflow-y-auto">
+            <div className={`flex-1 overflow-y-auto editor-wrapper ${settings.lineNumbers ? 'show-line-numbers' : ''}`}>
                 <EditorContent 
                     editor={editor} 
                     className="h-full editor-content"

@@ -6,7 +6,8 @@ import MarkdownEditor from './MarkdownEditor';
 import { createClient } from '@supabase/supabase-js';
 import { toast } from 'sonner';
 import AccountPage from '../app/account/Account';
-import SettingsPage from '../app/settings/Settings'; // Add this import
+import SettingsPage from '../app/settings/Settings';
+import { useSettings } from '../lib/SettingsContext'; // Import the settings hook
 
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -24,6 +25,7 @@ export default function TabSystem({
     onTabUpdate,   
     user
 }) {
+    const { settings } = useSettings(); // Use the settings hook
     const [draggedTab, setDraggedTab] = useState(null);
     const [dragOverIndex, setDragOverIndex] = useState(null);
     const [renamingTabId, setRenamingTabId] = useState(null);
@@ -145,9 +147,13 @@ export default function TabSystem({
 
             if (error) {
                 console.error('Error renaming file:', error);
-                toast.error('Failed to rename file');
+                if (settings.showNotifications) {
+                    toast.error('Failed to rename file');
+                }
             } else {
-                toast.success('File renamed successfully');
+                if (settings.showNotifications) {
+                    toast.success('File renamed successfully');
+                }
                 
                 // Update the tab name locally using the onTabUpdate prop
                 if (onTabUpdate) {
@@ -156,7 +162,9 @@ export default function TabSystem({
             }
         } catch (err) {
             console.error('Unexpected error renaming file:', err);
-            toast.error('Failed to rename file');
+            if (settings.showNotifications) {
+                toast.error('Failed to rename file');
+            }
         }
 
         setRenamingTabId(null);
@@ -281,7 +289,7 @@ export default function TabSystem({
             case 'account':
                 return <AccountPage />;
             case 'settings':
-                return <SettingsPage />; // Update this line
+                return <SettingsPage />;
             default:
                 return <div className="p-8">Unknown special tab</div>;
         }
@@ -391,12 +399,13 @@ export default function TabSystem({
                         // Render special tab content
                         renderSpecialTabContent(activeTab)
                     ) : (
-                        // Render normal file editor
+                        // Render normal file editor and pass settings
                         <MarkdownEditor
                             key={activeTab.id}
                             fileId={activeTab.id}
                             fileName={activeTab.name}
                             user={user}
+                            settings={settings} // Pass settings down to the editor
                         />
                     )
                 ) : (
