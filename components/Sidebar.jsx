@@ -1642,9 +1642,7 @@ export default function Sidebar({ onFileSelect: externalFileSelectHandler }) {
                     {initials}
                 </div>
                 <div className="flex flex-col">
-                    <Link href="/account" className="text-sm font-medium hover:opacity-80">
                         {fullName}
-                    </Link>
                     <span className="text-xs text-muted-foreground">
                         {currentDate}
                     </span>

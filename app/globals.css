@@ -255,7 +255,7 @@ body {
     line-height: 1.4;
 }
 
-/* Task list styles */
+/* Task list styles - UPDATED */
 .editor-content .ProseMirror .task-list {
     list-style: none;
     padding-left: 0;
@@ -268,69 +268,114 @@ body {
     margin: 0.25rem 0;
     list-style: none;
     position: relative;
+    min-height: 1.5rem;
 }
 
-/* Fix the checkbox positioning */
+/* Fix the checkbox positioning - UPDATED */
 .editor-content .ProseMirror .task-list .task-item > label {
     flex: 0 0 auto;
-    margin-right: 0.5rem;
-    margin-top: 0.125rem; /* Slightly adjust vertical alignment */
+    margin-right: 0.75rem;
+    margin-top: 0.1875rem;
     user-select: none;
     cursor: pointer;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
+    line-height: 1;
 }
 
 .editor-content .ProseMirror .task-list .task-item > label > input[type="checkbox"] {
     margin: 0;
+    padding: 0; /* Remove any padding */
     cursor: pointer;
-    width: 1rem;
-    height: 1rem;
+    width: 1.125rem;
+    height: 1.125rem;
+    accent-color: var(--primary);
+    border-radius: 0.25rem;
+    border: 1.5px solid var(--border);
+    background-color: var(--muted); /* Changed to muted background */
+    transition: all 0.15s ease;
+    appearance: none; /* Remove default styling */
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    position: relative;
 }
 
-/* Fix the content div to allow proper text flow */
+/* Custom checkbox styles for better appearance */
+.editor-content .ProseMirror .task-list .task-item > label > input[type="checkbox"]:checked {
+    background-color: var(--primary);
+    border-color: var(--primary);
+}
+
+/* Add custom checkmark */
+/*.editor-content .ProseMirror .task-list .task-item > label > input[type="checkbox"]:checked::after {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: var(--primary-foreground);
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1;
+}*/
+
+.editor-content .ProseMirror .task-list .task-item > label > input[type="checkbox"]:hover {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px var(--primary)/10;
+    background-color: var(--muted); /* Keep muted on hover when unchecked */
+}
+
+.editor-content .ProseMirror .task-list .task-item > label > input[type="checkbox"]:checked:hover {
+    background-color: var(--primary); /* Primary color on hover when checked */
+}
+
+.editor-content .ProseMirror .task-list .task-item > label > input[type="checkbox"]:focus {
+    outline: 2px solid var(--primary)/20;
+    outline-offset: 2px;
+    border-color: var(--primary);
+}
+
+/* Fix the content div to allow proper text flow - UPDATED */
 .editor-content .ProseMirror .task-list .task-item > div {
     flex: 1 1 auto;
-    min-width: 0; /* Important: allows text to wrap properly */
+    min-width: 0;
     line-height: 1.5;
+    margin-top: 0;
+    padding-top: 0;
 }
 
-/* Ensure paragraphs in task items behave correctly */
+/* Ensure paragraphs in task items behave correctly - UPDATED */
 .editor-content .ProseMirror .task-list .task-item > div > p {
     margin: 0;
     line-height: 1.5;
-    min-height: 1.5em; /* Ensure minimum height for cursor placement */
+    min-height: 1.5em; 
     word-wrap: break-word;
+    display: block;
 }
 
-/* Completed task styling */
+/* Completed task styling - UPDATED */
 .editor-content .ProseMirror .task-list .task-item[data-checked="true"] > div > p {
     text-decoration: line-through;
-    opacity: 0.6;
+    opacity: 0.65;
     color: var(--muted-foreground);
 }
 
-/* Nested task lists */
+/* Nested task lists - UPDATED */
 .editor-content .ProseMirror .task-list .task-item .task-list {
     margin-top: 0.25rem;
     margin-bottom: 0;
-    padding-left: 1.5rem;
+    padding-left: 1.75rem;
 }
 
-/* Fix cursor positioning in empty task items */
+/* Fix cursor positioning in empty task items - UPDATED */
 .editor-content .ProseMirror .task-list .task-item > div:empty::before {
     content: '';
     display: inline-block;
     width: 1px;
     height: 1.5em;
+    vertical-align: top;
 }
 
-/* Ensure proper focus styles */
-.editor-content .ProseMirror .task-list .task-item > div:focus {
-    outline: none;
-}
-
-/* Fix for Tiptap's specific task item structure */
+/* Fix for Tiptap's specific task item structure - UPDATED */
 .editor-content .ProseMirror ul[data-type="taskList"] {
     list-style: none !important;
     padding-left: 0 !important;
@@ -341,44 +386,80 @@ body {
     align-items: flex-start !important;
     list-style: none !important;
     margin: 0.25rem 0 !important;
+    min-height: 1.5rem !important;
 }
 
 .editor-content .ProseMirror li[data-type="taskItem"] > label {
     flex: 0 0 auto !important;
-    margin-right: 0.5rem !important;
-    margin-top: 0.125rem !important;
+    margin-right: 0.75rem !important;
+    margin-top: 0.1875rem !important;
     user-select: none !important;
     cursor: pointer !important;
+    line-height: 1 !important;
 }
 
 .editor-content .ProseMirror li[data-type="taskItem"] > div {
     flex: 1 1 auto !important;
     min-width: 0 !important;
+    margin-top: 0 !important;
+    padding-top: 0 !important;
 }
 
 .editor-content .ProseMirror li[data-type="taskItem"] > div > p {
     margin: 0 !important;
     line-height: 1.5 !important;
     min-height: 1.5em !important;
+    display: block !important;
 }
 
-/* Ensure checkbox styling is consistent */
+/* Enhanced checkbox styling for different states */
 .editor-content .ProseMirror input[type="checkbox"] {
     accent-color: var(--primary);
-    width: 1rem;
-    height: 1rem;
+    width: 1.125rem;
+    height: 1.125rem;
     margin: 0;
+    padding: 0; /* Remove padding */
+    border-radius: 0.25rem;
+    border: 1.5px solid var(--border);
+    background-color: var(--muted); /* Muted background */
+    transition: all 0.15s ease;
+    position: relative;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
 }
 
-/* Dark mode checkbox adjustments */
+/* Dark mode specific checkbox improvements */
 @media (prefers-color-scheme: dark) {
+    .editor-content .ProseMirror .task-list .task-item > label > input[type="checkbox"] {
+        border-color: var(--border);
+        background-color: var(--muted);
+    }
+    
+    .editor-content .ProseMirror .task-list .task-item > label > input[type="checkbox"]:checked {
+        background-color: var(--primary);
+        border-color: var(--primary);
+    }
+    
     .editor-content .ProseMirror .task-list .task-item[data-checked="true"] > div > p {
         color: var(--muted-foreground);
+        opacity: 0.7;
     }
+}
+
+.dark .editor-content .ProseMirror .task-list .task-item > label > input[type="checkbox"] {
+    border-color: var(--border);
+    background-color: var(--muted);
+}
+
+.dark .editor-content .ProseMirror .task-list .task-item > label > input[type="checkbox"]:checked {
+    background-color: var(--primary);
+    border-color: var(--primary);
 }
 
 .dark .editor-content .ProseMirror .task-list .task-item[data-checked="true"] > div > p {
     color: var(--muted-foreground);
+    opacity: 0.7;
 }
 
 /* Add this scrollbar styling after your existing styles */

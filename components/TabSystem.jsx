@@ -7,7 +7,7 @@ import { createClient } from '@supabase/supabase-js';
 import { toast } from 'sonner';
 import AccountPage from '../app/account/Account';
 import SettingsPage from '../app/settings/Settings';
-import { useSettings } from '../lib/SettingsContext'; // Import the settings hook
+import { useSettings } from '../lib/SettingsContext';
 
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
